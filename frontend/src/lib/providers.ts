@@ -1,375 +1,445 @@
-import { 
-  Cloud, 
-  Server, 
-  Database, 
-  Globe, 
-  Shield, 
-  Zap,
-  Container,
-  Layers,
-  Settings,
-  Monitor,
-  Code,
-  MessageSquare
-} from 'lucide-react'
-
-export interface Provider {
-  id: string
-  name: string
-  description: string
-  icon: any
-  color: string
-  features: string[]
-  credentialFields?: {
-    name: string
-    type: 'text' | 'password' | 'select' | 'textarea'
-    label: string
-    placeholder?: string
-    required: boolean
-    options?: string[]
-  }[]
+export enum AppProvider {
+  GOOGLE_WORKSPACE = 'google-workspace',
+  SLACK = 'slack',
+  MICROSOFT_365 = 'microsoft-365',
+  CLICKUP = 'clickup',
+  JIRA = 'jira',
+  CONFLUENCE = 'confluence',
+  GITHUB = 'github',
+  ZOOM = 'zoom',
+  HUBSPOT = 'hubspot',
 }
 
-export const providers: Provider[] = [
-  {
-    id: 'aws',
-    name: 'Amazon Web Services',
-    description: 'Deploy to AWS with EC2, ECS, Lambda, and more',
-    icon: Cloud,
-    color: 'bg-orange-500',
-    features: [
-      'EC2 Instances',
-      'ECS Containers',
-      'Lambda Functions',
-      'RDS Databases',
-      'S3 Storage',
-    ],
-    credentialFields: [
-      {
-        name: 'accessKeyId',
-        type: 'text',
-        label: 'Access Key ID',
-        placeholder: 'AKIA...',
-        required: true,
-      },
-      {
-        name: 'secretAccessKey',
-        type: 'password',
-        label: 'Secret Access Key',
-        required: true,
-      },
-      {
-        name: 'region',
-        type: 'select',
-        label: 'Default Region',
-        required: true,
-        options: ['us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1'],
-      },
-    ],
-  },
-  {
-    id: 'azure',
-    name: 'Microsoft Azure',
-    description: 'Deploy to Azure with App Services, VMs, and containers',
-    icon: Cloud,
+export interface ProviderConfig {
+  id: AppProvider;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  requiredFields: FieldConfig[];
+  optionalFields?: FieldConfig[];
+}
+
+export interface FieldConfig {
+  name: string;
+  label: string;
+  type: 'text' | 'email' | 'password' | 'select' | 'multiselect' | 'boolean' | 'number';
+  required: boolean;
+  placeholder?: string;
+  description?: string;
+  options?: { value: string; label: string }[];
+  default?: any;
+  validation?: {
+    pattern?: string;
+    min?: number;
+    max?: number;
+    minLength?: number;
+    maxLength?: number;
+  };
+}
+
+export const providers: Record<AppProvider, ProviderConfig> = {
+  [AppProvider.GOOGLE_WORKSPACE]: {
+    id: AppProvider.GOOGLE_WORKSPACE,
+    name: 'Google Workspace',
+    description: 'Email, calendar, and collaboration tools',
+    icon: '🔍',
     color: 'bg-blue-500',
-    features: [
-      'App Services',
-      'Virtual Machines',
-      'Container Instances',
-      'SQL Database',
-      'Blob Storage',
-    ],
-    credentialFields: [
+    requiredFields: [
       {
-        name: 'subscriptionId',
+        name: 'primaryOrgUnit',
+        label: 'Organization Unit',
         type: 'text',
-        label: 'Subscription ID',
         required: true,
+        default: '/',
+        placeholder: '/',
+        description: 'The organizational unit path for the user',
       },
       {
-        name: 'clientId',
-        type: 'text',
-        label: 'Client ID',
-        required: true,
-      },
-      {
-        name: 'clientSecret',
-        type: 'password',
-        label: 'Client Secret',
-        required: true,
-      },
-      {
-        name: 'tenantId',
-        type: 'text',
-        label: 'Tenant ID',
-        required: true,
-      },
-    ],
-  },
-  {
-    id: 'gcp',
-    name: 'Google Cloud Platform',
-    description: 'Deploy to GCP with Compute Engine, App Engine, and Cloud Run',
-    icon: Cloud,
-    color: 'bg-red-500',
-    features: [
-      'Compute Engine',
-      'App Engine',
-      'Cloud Run',
-      'Cloud SQL',
-      'Cloud Storage',
-    ],
-    credentialFields: [
-      {
-        name: 'projectId',
-        type: 'text',
-        label: 'Project ID',
-        required: true,
-      },
-      {
-        name: 'keyFile',
-        type: 'textarea',
-        label: 'Service Account Key (JSON)',
-        placeholder: 'Paste your service account key JSON here...',
-        required: true,
-      },
-      {
-        name: 'region',
+        name: 'licenseSku',
+        label: 'License SKU',
         type: 'select',
-        label: 'Default Region',
         required: true,
-        options: ['us-central1', 'us-east1', 'europe-west1', 'asia-southeast1'],
+        options: [
+          { value: 'Google-Apps-For-Business', label: 'Business Starter' },
+          { value: 'Google-Apps-For-Business-Plus', label: 'Business Standard' },
+          { value: 'Google-Apps-For-Enterprise', label: 'Business Plus' },
+          { value: 'Google-Apps-Unlimited', label: 'Enterprise' },
+        ],
+        default: 'Google-Apps-For-Business',
+      },
+    ],
+    optionalFields: [
+      {
+        name: 'initialPasswordPolicy',
+        label: 'Password Policy',
+        type: 'select',
+        required: false,
+        options: [
+          { value: 'auto', label: 'Auto-generate password' },
+          { value: 'manual', label: 'Set manual password' },
+        ],
+        default: 'auto',
       },
     ],
   },
-  {
-    id: 'docker',
-    name: 'Docker',
-    description: 'Deploy containerized applications with Docker',
-    icon: Container,
-    color: 'bg-cyan-500',
-    features: [
-      'Container Deployment',
-      'Multi-stage Builds',
-      'Registry Integration',
-      'Volume Management',
-      'Network Configuration',
-    ],
-    credentialFields: [
-      {
-        name: 'registryUrl',
-        type: 'text',
-        label: 'Registry URL',
-        placeholder: 'docker.io',
-        required: false,
-      },
-      {
-        name: 'username',
-        type: 'text',
-        label: 'Username',
-        required: false,
-      },
-      {
-        name: 'password',
-        type: 'password',
-        label: 'Password/Token',
-        required: false,
-      },
-    ],
-  },
-  {
-    id: 'kubernetes',
-    name: 'Kubernetes',
-    description: 'Deploy to any Kubernetes cluster with Helm charts',
-    icon: Layers,
+  [AppProvider.SLACK]: {
+    id: AppProvider.SLACK,
+    name: 'Slack',
+    description: 'Team communication and collaboration',
+    icon: '💬',
     color: 'bg-purple-500',
-    features: [
-      'Helm Deployments',
-      'Auto-scaling',
-      'Service Mesh',
-      'Ingress Configuration',
-      'Secret Management',
-    ],
-    credentialFields: [
+    requiredFields: [
       {
-        name: 'kubeconfig',
-        type: 'textarea',
-        label: 'Kubeconfig',
-        placeholder: 'Paste your kubeconfig YAML here...',
+        name: 'userRole',
+        label: 'User Role',
+        type: 'select',
         required: true,
+        options: [
+          { value: 'member', label: 'Member' },
+          { value: 'admin', label: 'Admin' },
+        ],
+        default: 'member',
       },
+    ],
+    optionalFields: [
       {
-        name: 'namespace',
-        type: 'text',
-        label: 'Default Namespace',
-        placeholder: 'default',
+        name: 'defaultChannels',
+        label: 'Default Channels',
+        type: 'multiselect',
         required: false,
+        options: [
+          { value: 'general', label: 'General' },
+          { value: 'random', label: 'Random' },
+          { value: 'engineering', label: 'Engineering' },
+          { value: 'sales', label: 'Sales' },
+          { value: 'marketing', label: 'Marketing' },
+          { value: 'product', label: 'Product' },
+        ],
+        default: ['general'],
+        description: 'Channels to automatically add the user to',
+      },
+      {
+        name: 'userGroups',
+        label: 'User Groups',
+        type: 'multiselect',
+        required: false,
+        options: [
+          { value: 'developers', label: 'Developers' },
+          { value: 'designers', label: 'Designers' },
+          { value: 'managers', label: 'Managers' },
+          { value: 'contractors', label: 'Contractors' },
+        ],
+        default: [],
       },
     ],
   },
-]
-
-export interface Application {
-  id: string
-  name: string
-  description: string
-  icon: any
-  category: string
-  supportedProviders: string[]
-  defaultConfig: Record<string, any>
-  configSchema?: {
-    name: string
-    type: 'text' | 'number' | 'boolean' | 'select'
-    label: string
-    required: boolean
-    default?: any
-    options?: string[]
-  }[]
-}
-
-export const applications: Application[] = [
-  {
-    id: 'web-app',
-    name: 'Web Application',
-    description: 'Deploy a full-stack web application with frontend and backend',
-    icon: Globe,
-    category: 'Web',
-    supportedProviders: ['aws', 'azure', 'gcp', 'kubernetes'],
-    defaultConfig: {
-      runtime: 'node',
-      port: 3000,
-      instances: 1,
-    },
-    configSchema: [
+  [AppProvider.MICROSOFT_365]: {
+    id: AppProvider.MICROSOFT_365,
+    name: 'Microsoft 365',
+    description: 'Office apps, email, and cloud storage',
+    icon: '📊',
+    color: 'bg-orange-500',
+    requiredFields: [
       {
-        name: 'runtime',
+        name: 'usageLocation',
+        label: 'Usage Location',
         type: 'select',
-        label: 'Runtime',
         required: true,
-        default: 'node',
-        options: ['node', 'python', 'java', 'php', 'ruby'],
+        options: [
+          { value: 'US', label: 'United States' },
+          { value: 'GB', label: 'United Kingdom' },
+          { value: 'CA', label: 'Canada' },
+          { value: 'AU', label: 'Australia' },
+          { value: 'DE', label: 'Germany' },
+          { value: 'FR', label: 'France' },
+          { value: 'JP', label: 'Japan' },
+          { value: 'IN', label: 'India' },
+        ],
+        default: 'US',
       },
       {
-        name: 'port',
-        type: 'number',
-        label: 'Port',
+        name: 'licenseSKUs',
+        label: 'License SKUs',
+        type: 'multiselect',
         required: true,
-        default: 3000,
+        options: [
+          { value: 'O365_BUSINESS_ESSENTIALS', label: 'Business Basic' },
+          { value: 'O365_BUSINESS_PREMIUM', label: 'Business Standard' },
+          { value: 'O365_BUSINESS', label: 'Business Premium' },
+          { value: 'ENTERPRISEPACK', label: 'E3' },
+          { value: 'ENTERPRISEPREMIUM', label: 'E5' },
+        ],
+        default: ['O365_BUSINESS_ESSENTIALS'],
+      },
+    ],
+    optionalFields: [
+      {
+        name: 'requirePasswordChange',
+        label: 'Require Password Change',
+        type: 'boolean',
+        required: false,
+        default: true,
+        description: 'Force user to change password on first login',
       },
       {
-        name: 'instances',
-        type: 'number',
-        label: 'Number of Instances',
-        required: true,
-        default: 1,
+        name: 'department',
+        label: 'Department',
+        type: 'text',
+        required: false,
+        placeholder: 'Engineering',
+      },
+      {
+        name: 'jobTitle',
+        label: 'Job Title',
+        type: 'text',
+        required: false,
+        placeholder: 'Software Engineer',
       },
     ],
   },
-  {
-    id: 'database',
-    name: 'Database',
-    description: 'Deploy a managed database (PostgreSQL, MySQL, or MongoDB)',
-    icon: Database,
-    category: 'Database',
-    supportedProviders: ['aws', 'azure', 'gcp'],
-    defaultConfig: {
-      engine: 'postgresql',
-      version: '13',
-      storage: 20,
-    },
-    configSchema: [
+  [AppProvider.CLICKUP]: {
+    id: AppProvider.CLICKUP,
+    name: 'ClickUp',
+    description: 'Project management and productivity',
+    icon: '✅',
+    color: 'bg-pink-500',
+    requiredFields: [
       {
-        name: 'engine',
-        type: 'select',
-        label: 'Database Engine',
+        name: 'workspace',
+        label: 'Workspace',
+        type: 'text',
         required: true,
-        default: 'postgresql',
-        options: ['postgresql', 'mysql', 'mongodb'],
+        placeholder: 'Main Workspace',
       },
       {
-        name: 'version',
+        name: 'permissionLevel',
+        label: 'Permission Level',
         type: 'select',
-        label: 'Version',
         required: true,
-        default: '13',
-        options: ['11', '12', '13', '14', '15'],
+        options: [
+          { value: 'guest', label: 'Guest' },
+          { value: 'member', label: 'Member' },
+          { value: 'admin', label: 'Admin' },
+        ],
+        default: 'member',
       },
+    ],
+    optionalFields: [
       {
-        name: 'storage',
-        type: 'number',
-        label: 'Storage (GB)',
-        required: true,
-        default: 20,
+        name: 'teams',
+        label: 'Teams',
+        type: 'multiselect',
+        required: false,
+        options: [
+          { value: 'product', label: 'Product Team' },
+          { value: 'engineering', label: 'Engineering Team' },
+          { value: 'design', label: 'Design Team' },
+          { value: 'marketing', label: 'Marketing Team' },
+        ],
+        default: [],
       },
     ],
   },
-  {
-    id: 'api',
-    name: 'REST API',
-    description: 'Deploy a RESTful API service with auto-scaling',
-    icon: Server,
-    category: 'API',
-    supportedProviders: ['aws', 'azure', 'gcp', 'kubernetes'],
-    defaultConfig: {
-      runtime: 'node',
-      port: 8080,
-      autoscale: true,
-    },
+  [AppProvider.JIRA]: {
+    id: AppProvider.JIRA,
+    name: 'Jira',
+    description: 'Issue tracking and project management',
+    icon: '🎯',
+    color: 'bg-blue-600',
+    requiredFields: [
+      {
+        name: 'site',
+        label: 'Jira Site',
+        type: 'text',
+        required: true,
+        placeholder: 'your-domain.atlassian.net',
+      },
+      {
+        name: 'projectAccess',
+        label: 'Project Access',
+        type: 'multiselect',
+        required: true,
+        options: [
+          { value: 'all', label: 'All Projects' },
+          { value: 'development', label: 'Development' },
+          { value: 'operations', label: 'Operations' },
+          { value: 'support', label: 'Support' },
+        ],
+        default: ['development'],
+      },
+    ],
+    optionalFields: [
+      {
+        name: 'defaultRole',
+        label: 'Default Role',
+        type: 'select',
+        required: false,
+        options: [
+          { value: 'developer', label: 'Developer' },
+          { value: 'viewer', label: 'Viewer' },
+          { value: 'admin', label: 'Administrator' },
+        ],
+        default: 'developer',
+      },
+    ],
   },
-  {
-    id: 'monitoring',
-    name: 'Monitoring Stack',
-    description: 'Deploy Prometheus, Grafana, and alerting infrastructure',
-    icon: Monitor,
-    category: 'Monitoring',
-    supportedProviders: ['kubernetes', 'docker'],
-    defaultConfig: {
-      retention: '30d',
-      alerts: true,
-    },
+  [AppProvider.CONFLUENCE]: {
+    id: AppProvider.CONFLUENCE,
+    name: 'Confluence',
+    description: 'Documentation and knowledge base',
+    icon: '📚',
+    color: 'bg-blue-600',
+    requiredFields: [
+      {
+        name: 'site',
+        label: 'Confluence Site',
+        type: 'text',
+        required: true,
+        placeholder: 'your-domain.atlassian.net',
+      },
+      {
+        name: 'spaceAccess',
+        label: 'Space Access',
+        type: 'multiselect',
+        required: true,
+        options: [
+          { value: 'all', label: 'All Spaces' },
+          { value: 'engineering', label: 'Engineering' },
+          { value: 'product', label: 'Product' },
+          { value: 'hr', label: 'HR' },
+        ],
+        default: ['engineering'],
+      },
+    ],
   },
-  {
-    id: 'ci-cd',
-    name: 'CI/CD Pipeline',
-    description: 'Set up continuous integration and deployment pipeline',
-    icon: Code,
-    category: 'DevOps',
-    supportedProviders: ['aws', 'azure', 'gcp'],
-    defaultConfig: {
-      trigger: 'push',
-      environments: ['staging', 'production'],
-    },
+  [AppProvider.GITHUB]: {
+    id: AppProvider.GITHUB,
+    name: 'GitHub',
+    description: 'Code repository and version control',
+    icon: '🐙',
+    color: 'bg-gray-800',
+    requiredFields: [
+      {
+        name: 'organization',
+        label: 'Organization',
+        type: 'text',
+        required: true,
+        placeholder: 'your-org',
+      },
+      {
+        name: 'role',
+        label: 'Role',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'member', label: 'Member' },
+          { value: 'owner', label: 'Owner' },
+        ],
+        default: 'member',
+      },
+    ],
+    optionalFields: [
+      {
+        name: 'teams',
+        label: 'Teams',
+        type: 'multiselect',
+        required: false,
+        options: [
+          { value: 'developers', label: 'Developers' },
+          { value: 'reviewers', label: 'Reviewers' },
+          { value: 'maintainers', label: 'Maintainers' },
+        ],
+        default: ['developers'],
+      },
+      {
+        name: 'ssoRequired',
+        label: 'Require SSO',
+        type: 'boolean',
+        required: false,
+        default: false,
+      },
+    ],
   },
-  {
-    id: 'message-queue',
-    name: 'Message Queue',
-    description: 'Deploy Redis or RabbitMQ for message processing',
-    icon: MessageSquare,
-    category: 'Infrastructure',
-    supportedProviders: ['aws', 'azure', 'gcp', 'kubernetes'],
-    defaultConfig: {
-      type: 'redis',
-      replicas: 1,
-    },
+  [AppProvider.ZOOM]: {
+    id: AppProvider.ZOOM,
+    name: 'Zoom',
+    description: 'Video conferencing and meetings',
+    icon: '📹',
+    color: 'bg-blue-500',
+    requiredFields: [
+      {
+        name: 'licenseType',
+        label: 'License Type',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'basic', label: 'Basic (Free)' },
+          { value: 'pro', label: 'Pro' },
+          { value: 'business', label: 'Business' },
+        ],
+        default: 'pro',
+      },
+    ],
+    optionalFields: [
+      {
+        name: 'addOns',
+        label: 'Add-ons',
+        type: 'multiselect',
+        required: false,
+        options: [
+          { value: 'webinar', label: 'Webinar' },
+          { value: 'cloud_recording', label: 'Cloud Recording' },
+          { value: 'large_meeting', label: 'Large Meeting' },
+        ],
+        default: [],
+      },
+    ],
   },
-]
+  [AppProvider.HUBSPOT]: {
+    id: AppProvider.HUBSPOT,
+    name: 'HubSpot',
+    description: 'CRM and marketing automation',
+    icon: '🚀',
+    color: 'bg-orange-600',
+    requiredFields: [
+      {
+        name: 'seatType',
+        label: 'Seat Type',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'core', label: 'Core Seat' },
+          { value: 'sales', label: 'Sales Seat' },
+          { value: 'service', label: 'Service Seat' },
+          { value: 'marketing', label: 'Marketing Seat' },
+        ],
+        default: 'core',
+      },
+    ],
+    optionalFields: [
+      {
+        name: 'permissions',
+        label: 'Permissions',
+        type: 'multiselect',
+        required: false,
+        options: [
+          { value: 'contacts', label: 'Contacts' },
+          { value: 'deals', label: 'Deals' },
+          { value: 'marketing', label: 'Marketing' },
+          { value: 'reports', label: 'Reports' },
+          { value: 'settings', label: 'Settings' },
+        ],
+        default: ['contacts', 'deals'],
+      },
+    ],
+  },
+};
 
-export const getProviderById = (id: string): Provider | undefined => {
-  return providers.find(provider => provider.id === id)
+export function getProvider(id: AppProvider): ProviderConfig | undefined {
+  return providers[id];
 }
 
-export const getApplicationById = (id: string): Application | undefined => {
-  return applications.find(app => app.id === id)
-}
-
-export const getApplicationsByProvider = (providerId: string): Application[] => {
-  return applications.filter(app => app.supportedProviders.includes(providerId))
-}
-
-export const getProvidersByApplication = (appId: string): Provider[] => {
-  const app = getApplicationById(appId)
-  if (!app) return []
-  
-  return providers.filter(provider => app.supportedProviders.includes(provider.id))
+export function getAllProviders(): ProviderConfig[] {
+  return Object.values(providers);
 }

@@ -1,110 +1,56 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
-import { applications } from '@/lib/providers'
-
-const appToggleSchema = z.object({
-  selectedApps: z.array(z.string()).min(1, 'Please select at least one application'),
-  configurations: z.record(z.any()).optional(),
-})
-
-type AppToggleData = z.infer<typeof appToggleSchema>
+import { AppProvider, getAllProviders } from '@/lib/providers';
+import { Switch } from '@/components/ui/switch';
+import { Card } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 interface AppToggleProps {
-  onSubmit: (data: AppToggleData) => void
-  initialData?: any
+  selectedApps: AppProvider[];
+  onToggle: (app: AppProvider) => void;
 }
 
-export function AppToggle({ onSubmit, initialData }: AppToggleProps) {
-  const [selectedApps, setSelectedApps] = useState<string[]>(
-    initialData?.selectedApps || []
-  )
-
-  const {
-    handleSubmit,
-    formState: { errors },
-  } = useForm<AppToggleData>({
-    resolver: zodResolver(appToggleSchema),
-    defaultValues: {
-      selectedApps: initialData?.selectedApps || [],
-      configurations: initialData?.configurations || {},
-    },
-  })
-
-  const handleAppToggle = (appId: string, enabled: boolean) => {
-    if (enabled) {
-      setSelectedApps(prev => [...prev, appId])
-    } else {
-      setSelectedApps(prev => prev.filter(id => id !== appId))
-    }
-  }
-
-  const handleFormSubmit = () => {
-    if (selectedApps.length === 0) {
-      return
-    }
-    
-    onSubmit({
-      selectedApps,
-      configurations: {},
-    })
-  }
+export function AppToggle({ selectedApps, onToggle }: AppToggleProps) {
+  const providers = getAllProviders();
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4">
-        {applications.map((app) => (
-          <Card key={app.id} className="relative">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center">
-                    <app.icon className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">{app.name}</CardTitle>
-                    <CardDescription>{app.description}</CardDescription>
-                  </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {providers.map((provider) => {
+        const isSelected = selectedApps.includes(provider.id);
+        
+        return (
+          <Card
+            key={provider.id}
+            className={cn(
+              "relative p-4 cursor-pointer transition-all",
+              isSelected ? "border-blue-500 bg-blue-50" : "hover:border-gray-400"
+            )}
+            onClick={() => onToggle(provider.id)}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex-1 pr-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">{provider.icon}</span>
+                  <h4 className="font-semibold">{provider.name}</h4>
                 </div>
-                <Switch
-                  checked={selectedApps.includes(app.id)}
-                  onCheckedChange={(enabled) => handleAppToggle(app.id, enabled)}
-                />
+                <p className="text-sm text-gray-600">
+                  {provider.description}
+                </p>
               </div>
-            </CardHeader>
-            {selectedApps.includes(app.id) && (
-              <CardContent className="pt-0">
-                <div className="rounded-md bg-muted p-3">
-                  <Label className="text-sm font-medium">Configuration Options</Label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Advanced configuration options will be available in the next step.
-                  </p>
-                </div>
-              </CardContent>
+              <Switch
+                checked={isSelected}
+                onCheckedChange={() => onToggle(provider.id)}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-1"
+              />
+            </div>
+            
+            {isSelected && (
+              <div className="absolute top-2 right-2 w-2 h-2 bg-blue-500 rounded-full" />
             )}
           </Card>
-        ))}
-      </div>
-
-      {errors.selectedApps && (
-        <p className="text-sm text-destructive">{errors.selectedApps.message}</p>
-      )}
-
-      <div className="flex justify-between">
-        <Button type="button" variant="outline" onClick={() => window.history.back()}>
-          Previous
-        </Button>
-        <Button onClick={handleFormSubmit} disabled={selectedApps.length === 0}>
-          Next
-        </Button>
-      </div>
+        );
+      })}
     </div>
-  )
+  );
 }
