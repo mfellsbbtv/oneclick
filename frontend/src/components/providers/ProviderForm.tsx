@@ -1,122 +1,194 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { providerSelectionSchema, type ProviderSelectionData } from '@/lib/validations'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
-import { providers } from '@/lib/providers'
-import { cn } from '@/lib/utils'
+import { useForm, Controller } from 'react-hook-form';
+import { useEffect } from 'react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { ProviderConfig, FieldConfig } from '@/lib/providers';
 
 interface ProviderFormProps {
-  onSubmit: (data: ProviderSelectionData) => void
-  initialData?: Partial<ProviderSelectionData>
+  provider: ProviderConfig;
+  initialData?: Record<string, any>;
+  onSubmit: (data: Record<string, any>) => void;
 }
 
-export function ProviderForm({ onSubmit, initialData }: ProviderFormProps) {
-  const [selectedProvider, setSelectedProvider] = useState<string>(
-    initialData?.provider || ''
-  )
+function renderField(field: FieldConfig, register: any, control: any, errors: any) {
+  const fieldError = errors[field.name];
 
+  switch (field.type) {
+    case 'boolean':
+      return (
+        <div key={field.name} className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <Label htmlFor={field.name}>{field.label}</Label>
+            {field.description && (
+              <div className="text-sm text-gray-500">{field.description}</div>
+            )}
+          </div>
+          <Controller
+            name={field.name}
+            control={control}
+            defaultValue={field.default || false}
+            render={({ field: controllerField }) => (
+              <Switch
+                checked={controllerField.value}
+                onCheckedChange={controllerField.onChange}
+              />
+            )}
+          />
+        </div>
+      );
+
+    case 'select':
+      return (
+        <div key={field.name}>
+          <Label htmlFor={field.name}>{field.label}</Label>
+          <select
+            {...register(field.name, { required: field.required })}
+            className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            defaultValue={field.default}
+          >
+            <option value="">Select...</option>
+            {field.options?.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {fieldError && (
+            <p className="text-sm text-red-600 mt-1">{fieldError.message}</p>
+          )}
+          {field.description && (
+            <p className="text-sm text-gray-500 mt-1">{field.description}</p>
+          )}
+        </div>
+      );
+
+    case 'multiselect':
+      return (
+        <div key={field.name}>
+          <Label>{field.label}</Label>
+          <div className="mt-2 space-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded p-2">
+            {field.options?.map((option) => (
+              <Controller
+                key={option.value}
+                name={field.name}
+                control={control}
+                defaultValue={field.default || []}
+                render={({ field: controllerField }) => (
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={controllerField.value?.includes(option.value) || false}
+                      onChange={(e) => {
+                        const current = controllerField.value || [];
+                        if (e.target.checked) {
+                          controllerField.onChange([...current, option.value]);
+                        } else {
+                          controllerField.onChange(
+                            current.filter((val: string) => val !== option.value)
+                          );
+                        }
+                      }}
+                      className="rounded"
+                    />
+                    <span className="text-sm">{option.label}</span>
+                  </label>
+                )}
+              />
+            ))}
+          </div>
+          {field.description && (
+            <p className="text-sm text-gray-500 mt-1">{field.description}</p>
+          )}
+        </div>
+      );
+
+    default: // text, email, password, number
+      return (
+        <div key={field.name}>
+          <Label htmlFor={field.name}>{field.label}</Label>
+          <Input
+            id={field.name}
+            type={field.type}
+            {...register(field.name, { 
+              required: field.required ? `${field.label} is required` : false 
+            })}
+            placeholder={field.placeholder}
+            defaultValue={field.default}
+            className={fieldError ? 'border-red-500' : ''}
+          />
+          {fieldError && (
+            <p className="text-sm text-red-600 mt-1">{fieldError.message}</p>
+          )}
+          {field.description && (
+            <p className="text-sm text-gray-500 mt-1">{field.description}</p>
+          )}
+        </div>
+      );
+  }
+}
+
+export default function ProviderForm({ provider, initialData, onSubmit }: ProviderFormProps) {
   const {
+    register,
+    control,
     handleSubmit,
-    setValue,
+    watch,
     formState: { errors },
-  } = useForm<ProviderSelectionData>({
-    resolver: zodResolver(providerSelectionSchema),
-    defaultValues: initialData,
-  })
+  } = useForm({
+    defaultValues: initialData || {},
+  });
 
-  const handleProviderSelect = (providerId: string) => {
-    setSelectedProvider(providerId)
-    setValue('provider', providerId)
-    setValue('credentials', {}) // Reset credentials when provider changes
-  }
+  const watchedValues = watch();
 
-  const handleFormSubmit = (data: ProviderSelectionData) => {
-    onSubmit({
-      ...data,
-      provider: selectedProvider,
-    })
-  }
+  // Auto-submit when form data changes
+  useEffect(() => {
+    const subscription = watch((value) => {
+      // Check if all required fields are filled
+      const hasRequiredFields = provider.requiredFields.every(field => {
+        const val = value[field.name];
+        if (field.type === 'multiselect') {
+          return Array.isArray(val) && val.length > 0;
+        }
+        return val !== undefined && val !== null && val !== '';
+      });
+
+      if (hasRequiredFields) {
+        onSubmit(value);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [watch, onSubmit, provider.requiredFields]);
 
   return (
-    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
-      <div>
-        <Label className="text-base font-semibold">Select Cloud Provider</Label>
-        <p className="text-sm text-muted-foreground mb-4">
-          Choose the cloud provider where you want to deploy your applications.
-        </p>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {providers.map((provider) => (
-            <Card
-              key={provider.id}
-              className={cn(
-                'cursor-pointer transition-all hover:shadow-md',
-                selectedProvider === provider.id
-                  ? 'ring-2 ring-primary border-primary'
-                  : 'hover:border-primary/50'
-              )}
-              onClick={() => handleProviderSelect(provider.id)}
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-center space-x-3">
-                  <div className={`h-10 w-10 rounded-md ${provider.color} flex items-center justify-center`}>
-                    <provider.icon className="h-6 w-6 text-white" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">{provider.name}</CardTitle>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <CardDescription>{provider.description}</CardDescription>
-                <div className="mt-3 space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground">Features:</p>
-                  <ul className="text-xs text-muted-foreground space-y-0.5">
-                    {provider.features.map((feature, index) => (
-                      <li key={index}>• {feature}</li>
-                    ))}
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {errors.provider && (
-          <p className="text-sm text-destructive mt-2">{errors.provider.message}</p>
+    <div className="space-y-6">
+      <div className="space-y-4">
+        <h4 className="font-medium text-sm text-gray-900 uppercase tracking-wide">
+          Required Fields
+        </h4>
+        {provider.requiredFields.map((field) =>
+          renderField(field, register, control, errors)
         )}
       </div>
 
-      {selectedProvider && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Provider Configuration</CardTitle>
-            <CardDescription>
-              Configure your {providers.find(p => p.id === selectedProvider)?.name} credentials and settings.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Credential configuration will be implemented in the next phase of development.
-              For now, we'll use default settings for the selected provider.
-            </p>
-          </CardContent>
-        </Card>
+      {provider.optionalFields && provider.optionalFields.length > 0 && (
+        <div className="space-y-4">
+          <h4 className="font-medium text-sm text-gray-900 uppercase tracking-wide">
+            Optional Fields
+          </h4>
+          {provider.optionalFields.map((field) =>
+            renderField(field, register, control, errors)
+          )}
+        </div>
       )}
 
-      <div className="flex justify-between">
-        <Button type="button" variant="outline" onClick={() => window.history.back()}>
-          Previous
-        </Button>
-        <Button type="submit" disabled={!selectedProvider}>
-          Next
-        </Button>
+      <div className="pt-4 border-t text-sm text-gray-500">
+        <p>Configuration will be saved automatically as you fill out the form.</p>
       </div>
-    </form>
-  )
+    </div>
+  );
 }

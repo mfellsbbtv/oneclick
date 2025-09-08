@@ -1,98 +1,83 @@
-'use client'
+'use client';
 
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { userInfoSchema, type UserInfoData } from '@/lib/validations'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { useEffect } from 'react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { UserInfo } from '@/contexts/WizardContext';
+
+const userInfoSchema = z.object({
+  fullName: z.string().min(2, 'Full name must be at least 2 characters'),
+  workEmail: z.string().email('Please enter a valid email address'),
+});
 
 interface UserInfoFormProps {
-  onSubmit: (data: UserInfoData) => void
-  initialData?: Partial<UserInfoData>
+  initialData: UserInfo | null;
+  onSubmit: (data: UserInfo) => void;
 }
 
-export function UserInfoForm({ onSubmit, initialData }: UserInfoFormProps) {
+export function UserInfoForm({ initialData, onSubmit }: UserInfoFormProps) {
   const {
     register,
     handleSubmit,
-    formState: { errors, isValid },
-  } = useForm<UserInfoData>({
+    watch,
+    formState: { errors },
+  } = useForm<UserInfo>({
     resolver: zodResolver(userInfoSchema),
-    defaultValues: initialData,
-    mode: 'onChange',
-  })
+    defaultValues: initialData || {
+      fullName: '',
+      workEmail: '',
+    },
+  });
+
+  const watchedValues = watch();
+
+  // Auto-submit when form changes and is valid
+  useEffect(() => {
+    const subscription = watch((value) => {
+      const result = userInfoSchema.safeParse(value);
+      if (result.success) {
+        onSubmit(result.data);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [watch, onSubmit]);
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-2">
-          <Label htmlFor="firstName">First Name</Label>
-          <Input
-            id="firstName"
-            {...register('firstName')}
-            placeholder="Enter your first name"
-          />
-          {errors.firstName && (
-            <p className="text-sm text-destructive">{errors.firstName.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="lastName">Last Name</Label>
-          <Input
-            id="lastName"
-            {...register('lastName')}
-            placeholder="Enter your last name"
-          />
-          {errors.lastName && (
-            <p className="text-sm text-destructive">{errors.lastName.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="email">Email Address</Label>
-          <Input
-            id="email"
-            type="email"
-            {...register('email')}
-            placeholder="Enter your email address"
-          />
-          {errors.email && (
-            <p className="text-sm text-destructive">{errors.email.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="organization">Organization</Label>
-          <Input
-            id="organization"
-            {...register('organization')}
-            placeholder="Enter your organization name"
-          />
-          {errors.organization && (
-            <p className="text-sm text-destructive">{errors.organization.message}</p>
-          )}
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="projectName">Project Name</Label>
+    <form className="space-y-4">
+      <div>
+        <Label htmlFor="fullName">Full Name *</Label>
         <Input
-          id="projectName"
-          {...register('projectName')}
-          placeholder="Enter a name for your project"
+          id="fullName"
+          {...register('fullName')}
+          placeholder="John Doe"
+          className={errors.fullName ? 'border-red-500' : ''}
         />
-        {errors.projectName && (
-          <p className="text-sm text-destructive">{errors.projectName.message}</p>
+        {errors.fullName && (
+          <p className="text-sm text-red-600 mt-1">{errors.fullName.message}</p>
         )}
       </div>
 
-      <div className="flex justify-end">
-        <Button type="submit" disabled={!isValid}>
-          Next
-        </Button>
+      <div>
+        <Label htmlFor="workEmail">Work Email *</Label>
+        <Input
+          id="workEmail"
+          type="email"
+          {...register('workEmail')}
+          placeholder="john.doe@company.com"
+          className={errors.workEmail ? 'border-red-500' : ''}
+        />
+        {errors.workEmail && (
+          <p className="text-sm text-red-600 mt-1">{errors.workEmail.message}</p>
+        )}
+      </div>
+
+      <div className="text-sm text-gray-600">
+        <p>* Required fields</p>
       </div>
     </form>
-  )
+  );
 }

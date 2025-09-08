@@ -182,11 +182,18 @@ function WizardContent() {
         <CardContent className="space-y-6">
           <StepIndicator
             currentStep={currentStep}
-            totalSteps={totalSteps}
             steps={[
-              'User Info',
-              ...selectedApps.map(app => getProvider(app)?.name || app),
-              'Review',
+              { id: 0, title: 'User Info', description: 'Basic information' },
+              ...selectedApps.map((app, index) => ({
+                id: index + 1,
+                title: getProvider(app)?.name || app,
+                description: 'Configure settings',
+              })),
+              { 
+                id: selectedApps.length + 1, 
+                title: 'Review', 
+                description: 'Confirm and submit' 
+              },
             ]}
           />
 
