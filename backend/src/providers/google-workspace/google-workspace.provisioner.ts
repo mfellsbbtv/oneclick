@@ -7,7 +7,9 @@ export interface GoogleWorkspaceInput {
   fullName: string;
   workEmail: string;
   primaryOrgUnit?: string;
-  initialPasswordPolicy?: 'auto' | 'manual';
+  passwordMode?: 'auto' | 'custom';
+  customPassword?: string;
+  changePasswordAtNextLogin?: boolean;
   licenseSku?: string;
 }
 
@@ -17,16 +19,29 @@ export class GoogleWorkspaceProvisioner implements Provisioner {
   private licensing;
 
   constructor(private configService: ConfigService) {
-    const auth = new google.auth.GoogleAuth({
-      keyFile: this.configService.get('GOOGLE_CREDENTIALS_JSON'),
-      scopes: [
-        'https://www.googleapis.com/auth/admin.directory.user',
-        'https://www.googleapis.com/auth/apps.licensing',
-      ],
+    const credentialsPath = this.configService.get('GOOGLE_CREDENTIALS_JSON') || '/home/mfells/Projects/oneclick/google-credentials.json';
+    const adminEmail = this.configService.get('GOOGLE_ADMIN_DELEGATED_USER') || 'mfells@broadbandtvcorp.com';
+    
+    // Load credentials for direct JWT authentication
+    const credentials = require(credentialsPath);
+    
+    // Create JWT clients with proper impersonation
+    const adminAuth = new google.auth.JWT({
+      email: credentials.client_email,
+      key: credentials.private_key,
+      scopes: ['https://www.googleapis.com/auth/admin.directory.user'],
+      subject: adminEmail,
     });
 
-    this.admin = google.admin({ version: 'directory_v1', auth });
-    this.licensing = google.licensing({ version: 'v1', auth });
+    const licensingAuth = new google.auth.JWT({
+      email: credentials.client_email,
+      key: credentials.private_key,
+      scopes: ['https://www.googleapis.com/auth/apps.licensing'],
+      subject: adminEmail,
+    });
+
+    this.admin = google.admin({ version: 'directory_v1', auth: adminAuth });
+    this.licensing = google.licensing({ version: 'v1', auth: licensingAuth });
   }
 
   async validate(input: unknown): Promise<ValidatedInput> {
@@ -40,13 +55,24 @@ export class GoogleWorkspaceProvisioner implements Provisioner {
       throw new Error('Invalid email format');
     }
 
+    // Validate custom password if provided
+    if (data.passwordMode === 'custom') {
+      if (!data.customPassword) {
+        throw new Error('Custom password is required when password mode is set to custom');
+      }
+      if (data.customPassword.length < 8) {
+        throw new Error('Custom password must be at least 8 characters long');
+      }
+    }
+
     return {
       provider: 'google-workspace',
       data: {
         ...data,
         primaryOrgUnit: data.primaryOrgUnit || '/',
-        initialPasswordPolicy: data.initialPasswordPolicy || 'auto',
-        licenseSku: data.licenseSku || 'Google-Apps-For-Business',
+        passwordMode: data.passwordMode || 'auto',
+        changePasswordAtNextLogin: data.changePasswordAtNextLogin !== undefined ? data.changePasswordAtNextLogin : false,
+        licenseSku: data.licenseSku || '1010020027',
       },
     };
   }
@@ -100,6 +126,14 @@ export class GoogleWorkspaceProvisioner implements Provisioner {
     const externalIds = {};
 
     try {
+      // Determine password to use (for both create and update scenarios)
+      const password = data.passwordMode === 'custom' && data.customPassword
+        ? data.customPassword
+        : this.generatePassword();
+
+      // Store the password that will be used
+      externalIds['password'] = password;
+
       // Create or update user
       let userId;
       try {
@@ -117,14 +151,11 @@ export class GoogleWorkspaceProvisioner implements Provisioner {
               familyName: data.fullName.split(' ').slice(1).join(' ') || 'User',
             },
             orgUnitPath: data.primaryOrgUnit,
+            // Note: Password updates for existing users require different API calls
           },
         });
       } catch (error) {
         // Create new user
-        const password = data.initialPasswordPolicy === 'auto' 
-          ? this.generatePassword() 
-          : 'ChangeMe123!';
-
         const newUser = await this.admin.users.insert({
           requestBody: {
             primaryEmail: data.workEmail,
@@ -133,7 +164,7 @@ export class GoogleWorkspaceProvisioner implements Provisioner {
               familyName: data.fullName.split(' ').slice(1).join(' ') || 'User',
             },
             password,
-            changePasswordAtNextLogin: true,
+            changePasswordAtNextLogin: data.changePasswordAtNextLogin,
             orgUnitPath: data.primaryOrgUnit,
           },
         });
@@ -145,7 +176,7 @@ export class GoogleWorkspaceProvisioner implements Provisioner {
       // Assign license
       try {
         await this.licensing.licenseAssignments.insert({
-          productId: data.licenseSku.split('-')[0],
+          productId: 'Google-Apps',
           skuId: data.licenseSku,
           requestBody: {
             userId: data.workEmail,
@@ -164,6 +195,10 @@ export class GoogleWorkspaceProvisioner implements Provisioner {
           email: data.workEmail,
           orgUnit: data.primaryOrgUnit,
           license: data.licenseSku,
+          passwordMode: data.passwordMode,
+          changePasswordAtNextLogin: data.changePasswordAtNextLogin,
+          customPasswordUsed: data.passwordMode === 'custom',
+          passwordUsed: externalIds['password'], // Include the actual password used
         },
       };
     } catch (error) {

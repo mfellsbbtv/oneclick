@@ -1,0 +1,273 @@
+{
+  "name": "Microsoft 365 User Provisioning",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "microsoft-provision",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Get Microsoft Graph access token\nconst tenantId = $env.MS_TENANT_ID || 'YOUR_TENANT_ID';\nconst clientId = $env.MS_CLIENT_ID || 'YOUR_CLIENT_ID';\nconst clientSecret = $env.MS_CLIENT_SECRET || 'YOUR_CLIENT_SECRET';\n\nconst tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: tokenUrl,\n    headers: {\n      'Content-Type': 'application/x-www-form-urlencoded'\n    },\n    body: `client_id=${clientId}&client_secret=${clientSecret}&scope=https://graph.microsoft.com/.default&grant_type=client_credentials`,\n    returnFullResponse: true,\n    json: false\n  });\n\n  const tokenData = JSON.parse(response.body);\n  \n  // Generate secure password\n  const password = 'Temp' + Math.random().toString(36).substring(2, 10) + '!A1';\n  \n  return {\n    json: {\n      access_token: tokenData.access_token,\n      employee: $input.item.json.employee,\n      applications: $input.item.json.applications,\n      tempPassword: password\n    }\n  };\n} catch (error) {\n  throw new Error(`Failed to get access token: ${error.message}`);\n}"
+      },
+      "id": "function-1",
+      "name": "Get Access Token",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://graph.microsoft.com/v1.0/users",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "accountEnabled",
+              "value": "=true"
+            },
+            {
+              "name": "displayName",
+              "value": "={{ $json.employee.fullName }}"
+            },
+            {
+              "name": "mailNickname",
+              "value": "={{ $json.employee.workEmail.split('@')[0] }}"
+            },
+            {
+              "name": "userPrincipalName",
+              "value": "={{ $json.employee.workEmail }}"
+            },
+            {
+              "name": "passwordProfile",
+              "value": "={{ {\"forceChangePasswordNextSignIn\": true, \"password\": $json.tempPassword} }}"
+            },
+            {
+              "name": "givenName",
+              "value": "={{ $json.employee.fullName.split(' ')[0] }}"
+            },
+            {
+              "name": "surname",
+              "value": "={{ $json.employee.fullName.split(' ').slice(1).join(' ') }}"
+            },
+            {
+              "name": "jobTitle",
+              "value": "={{ $json.employee.jobTitle }}"
+            },
+            {
+              "name": "department",
+              "value": "={{ $json.employee.department }}"
+            },
+            {
+              "name": "usageLocation",
+              "value": "={{ $json.applications.microsoft365.usageLocation || 'US' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-1",
+      "name": "Create User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.applications.microsoft365.licenses !== undefined && $json.applications.microsoft365.licenses.length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-1",
+      "name": "Has Licenses?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.microsoft.com/v1.0/users/{{ $node['Create User'].json.id }}/assignLicense",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $node['Get Access Token'].json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "addLicenses",
+              "value": "={{ $node['Get Access Token'].json.applications.microsoft365.licenses.map(sku => ({skuId: sku})) }}"
+            },
+            {
+              "name": "removeLicenses",
+              "value": "=[]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-2",
+      "name": "Assign Licenses",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1050, 280]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "provider",
+              "value": "microsoft-365"
+            },
+            {
+              "name": "userId",
+              "value": "={{ $node['Create User'].json.id }}"
+            },
+            {
+              "name": "userPrincipalName",
+              "value": "={{ $node['Create User'].json.userPrincipalName }}"
+            },
+            {
+              "name": "tempPassword",
+              "value": "={{ $node['Get Access Token'].json.tempPassword }}"
+            },
+            {
+              "name": "adminPortalUrl",
+              "value": "=https://admin.microsoft.com/Adminportal/Home#/users"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-1",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-1",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Access Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Access Token": {
+      "main": [
+        [
+          {
+            "node": "Create User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create User": {
+      "main": [
+        [
+          {
+            "node": "Has Licenses?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Licenses?": {
+      "main": [
+        [
+          {
+            "node": "Assign Licenses",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign Licenses": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

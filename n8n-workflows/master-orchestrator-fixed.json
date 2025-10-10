@@ -1,0 +1,217 @@
+{
+  "name": "OneClick Master Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "provision",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "provision-main"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract and validate incoming data\nconst requestData = $input.first().json;\n\n// Validate required fields\nif (!requestData.employee?.workEmail || !requestData.employee?.fullName) {\n  throw new Error('Missing required employee information');\n}\n\n// Generate request ID if not provided\nconst requestId = requestData.requestId || `prov-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;\n\n// Prepare data for parallel processing\nconst enabledApps = [];\nconst applications = requestData.applications || {};\n\nfor (const [appName, config] of Object.entries(applications)) {\n  if (config.enabled) {\n    enabledApps.push({\n      appName,\n      config,\n      employee: requestData.employee,\n      requestId\n    });\n  }\n}\n\nreturn enabledApps.map(app => ({ json: app }));"
+      },
+      "id": "validate-and-prepare",
+      "name": "Validate & Prepare Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "value1": "={{ $json.appName }}",
+              "value2": "googleWorkspace"
+            }
+          ]
+        }
+      },
+      "id": "if-google",
+      "name": "If Google Workspace",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "value1": "={{ $json.appName }}",
+              "value2": "slack"
+            }
+          ]
+        }
+      },
+      "id": "if-slack",
+      "name": "If Slack",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://rhei.app.n8n.cloud/webhook-test/provision-google-gsuite-username",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ { requestId: $json.requestId, employee: $json.employee, config: $json.config } }}"
+      },
+      "id": "call-google-workflow",
+      "name": "Call Google Workspace Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format Google Workspace response for orchestrator\nconst response = $input.first().json;\n\n// The Google Workspace workflow returns this format:\n// { appName: 'googleWorkspace', requestId: 'xxx', result: { ... } }\n// We need to pass it through in the expected format\n\nreturn [{\n  json: {\n    appName: response.appName || 'googleWorkspace',\n    result: response.result\n  }\n}];"
+      },
+      "id": "format-google-response",
+      "name": "Format Google Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Mock Slack provisioning\nconst data = $input.first().json;\n\nreturn [{\n  json: {\n    appName: 'slack',\n    result: {\n      status: 'success',\n      userId: data.employee.workEmail,\n      message: 'Slack account created',\n      details: {\n        channels: data.config.channels || ['general'],\n        role: data.config.userRole || 'regular'\n      }\n    }\n  }\n}];"
+      },
+      "id": "mock-slack",
+      "name": "Mock Slack Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Aggregate all results\nconst allItems = $input.all();\nconst requestData = $('webhook-trigger').first().json;\nconst requestId = requestData.requestId || 'unknown';\n\nconst results = {};\nlet overallStatus = 'success';\nconst errors = [];\n\n// Process each result\nfor (const item of allItems) {\n  const data = item.json;\n  if (data.appName && data.result) {\n    results[data.appName] = data.result;\n    \n    if (data.result.status === 'error' || data.result.status === 'failed') {\n      overallStatus = 'partial';\n      errors.push(`${data.appName}: ${data.result.error || 'Unknown error'}`);\n    }\n  }\n}\n\n// If all failed, mark as failed\nif (errors.length === Object.keys(results).length && errors.length > 0) {\n  overallStatus = 'failed';\n}\n\nreturn [{\n  json: {\n    requestId,\n    status: overallStatus,\n    timestamp: new Date().toISOString(),\n    results,\n    errors: errors.length > 0 ? errors : undefined,\n    summary: {\n      requested: Object.keys(requestData.applications || {}).length,\n      successful: Object.values(results).filter(r => r.status === 'success').length,\n      failed: Object.values(results).filter(r => r.status === 'error' || r.status === 'failed').length\n    }\n  }\n}];"
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "webhook-trigger": {
+      "main": [
+        [
+          {
+            "node": "validate-and-prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validate-and-prepare": {
+      "main": [
+        [
+          {
+            "node": "if-google",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "if-slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "if-google": {
+      "main": [
+        [
+          {
+            "node": "call-google-workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "if-slack": {
+      "main": [
+        [
+          {
+            "node": "mock-slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "call-google-workflow": {
+      "main": [
+        [
+          {
+            "node": "format-google-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "format-google-response": {
+      "main": [
+        [
+          {
+            "node": "aggregate-results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mock-slack": {
+      "main": [
+        [
+          {
+            "node": "aggregate-results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aggregate-results": {
+      "main": [
+        [
+          {
+            "node": "respond-to-webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "versionId": "1"
+}

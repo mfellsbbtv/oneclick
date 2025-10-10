@@ -1,0 +1,436 @@
+{
+  "name": "OneClick Master Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "provision",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Receive Provision Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "provision-main"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate incoming request data\nconst data = $input.first().json;\nconst errors = [];\n\n// Check required fields\nif (!data.employee?.fullName) {\n  errors.push('Employee full name is required');\n}\nif (!data.employee?.workEmail) {\n  errors.push('Employee work email is required');\n}\n\n// Check at least one app is enabled\nconst apps = data.applications || {};\nconst enabledApps = Object.keys(apps).filter(app => apps[app]?.enabled);\nif (enabledApps.length === 0) {\n  errors.push('At least one application must be enabled');\n}\n\n// Generate request ID if not provided\nconst requestId = data.requestId || `prov-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;\n\nif (errors.length > 0) {\n  return {\n    valid: false,\n    requestId,\n    errors,\n    status: 'validation_failed'\n  };\n}\n\n// Return validated data with request ID\nreturn {\n  valid: true,\n  requestId,\n  employee: data.employee,\n  applications: apps,\n  enabledApps,\n  timestamp: new Date().toISOString(),\n  status: 'validated'\n};"
+      },
+      "id": "validate-request",
+      "name": "Validate Request Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.valid }}",
+                    "rightValue": true,
+                    "operation": "equal"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Valid"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.valid }}",
+                    "rightValue": false,
+                    "operation": "equal"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Invalid"
+            }
+          ]
+        }
+      },
+      "id": "validation-switch",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "values": [
+            {
+              "name": "provisioningStatus",
+              "value": "={{ {} }}"
+            },
+            {
+              "name": "completedApps",
+              "value": 0
+            },
+            {
+              "name": "totalApps",
+              "value": "={{ $json.enabledApps.length }}"
+            },
+            {
+              "name": "startTime",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "init-status",
+      "name": "Initialize Status Tracking",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [850, 280]
+    },
+    {
+      "parameters": {
+        "content": "## Process Each Enabled Application\nThis section will check which apps are enabled and trigger their respective sub-workflows",
+        "height": 80,
+        "width": 250
+      },
+      "id": "note-apps",
+      "name": "Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $('init-status').item.json.applications.googleWorkspace?.enabled }}",
+              "rightValue": true,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "id": "check-google",
+      "name": "Google Workspace Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 280]
+    },
+    {
+      "parameters": {
+        "workflowId": "google-workspace-provision",
+        "options": {
+          "waitForSubWorkflow": true
+        },
+        "workflowData": "={{ JSON.stringify({\n  requestId: $('init-status').item.json.requestId,\n  employee: $('init-status').item.json.employee,\n  config: $('init-status').item.json.applications.googleWorkspace\n}) }}"
+      },
+      "id": "execute-google",
+      "name": "Execute Google Workspace Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1250, 260]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $('init-status').item.json.applications.slack?.enabled }}",
+              "rightValue": true,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "id": "check-slack",
+      "name": "Slack Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 420]
+    },
+    {
+      "parameters": {
+        "workflowId": "slack-provision",
+        "options": {
+          "waitForSubWorkflow": true
+        },
+        "workflowData": "={{ JSON.stringify({\n  requestId: $('init-status').item.json.requestId,\n  employee: $('init-status').item.json.employee,\n  config: $('init-status').item.json.applications.slack\n}) }}"
+      },
+      "id": "execute-slack",
+      "name": "Execute Slack Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $('init-status').item.json.applications.microsoft365?.enabled }}",
+              "rightValue": true,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "id": "check-microsoft",
+      "name": "Microsoft 365 Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 560]
+    },
+    {
+      "parameters": {
+        "workflowId": "microsoft365-provision",
+        "options": {
+          "waitForSubWorkflow": true
+        },
+        "workflowData": "={{ JSON.stringify({\n  requestId: $('init-status').item.json.requestId,\n  employee: $('init-status').item.json.employee,\n  config: $('init-status').item.json.applications.microsoft365\n}) }}"
+      },
+      "id": "execute-microsoft",
+      "name": "Execute Microsoft 365 Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1250, 540]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate results from all sub-workflows\nconst results = {};\nconst allInputs = $input.all();\n\n// Process results from each app workflow\nallInputs.forEach(input => {\n  if (input.json.application) {\n    results[input.json.application] = {\n      status: input.json.status,\n      userId: input.json.userId,\n      details: input.json.details,\n      error: input.json.error,\n      completedAt: input.json.completedAt\n    };\n  }\n});\n\n// Calculate overall status\nconst statuses = Object.values(results).map(r => r.status);\nlet overallStatus = 'completed';\nif (statuses.includes('failed')) {\n  overallStatus = statuses.every(s => s === 'failed') ? 'failed' : 'partial';\n}\n\nreturn {\n  requestId: $('init-status').item.json.requestId,\n  status: overallStatus,\n  timestamp: new Date().toISOString(),\n  employee: $('init-status').item.json.employee,\n  results,\n  summary: {\n    total: Object.keys(results).length,\n    succeeded: statuses.filter(s => s === 'success').length,\n    failed: statuses.filter(s => s === 'failed').length\n  }\n};"
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('webhook-trigger').item.json.body.webhookUrl || 'https://placeholder.com/webhook' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000,
+          "ignoreResponseErrors": true
+        }
+      },
+      "id": "send-status-update",
+      "name": "Send Status to Frontend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 400],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Return Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1850, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  requestId: $json.requestId,\n  status: 'error',\n  errors: $json.errors,\n  message: 'Validation failed'\n}) }}",
+        "responseCode": 400,
+        "options": {}
+      },
+      "id": "validation-error-response",
+      "name": "Return Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 450]
+    }
+  ],
+  "connections": {
+    "webhook-trigger": {
+      "main": [
+        [
+          {
+            "node": "validate-request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validate-request": {
+      "main": [
+        [
+          {
+            "node": "validation-switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validation-switch": {
+      "main": [
+        [
+          {
+            "node": "init-status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "validation-error-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "init-status": {
+      "main": [
+        [
+          {
+            "node": "check-google",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "check-slack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "check-microsoft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check-google": {
+      "main": [
+        [
+          {
+            "node": "execute-google",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "check-slack": {
+      "main": [
+        [
+          {
+            "node": "execute-slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "check-microsoft": {
+      "main": [
+        [
+          {
+            "node": "execute-microsoft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "execute-google": {
+      "main": [
+        [
+          {
+            "node": "aggregate-results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "execute-slack": {
+      "main": [
+        [
+          {
+            "node": "aggregate-results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "execute-microsoft": {
+      "main": [
+        [
+          {
+            "node": "aggregate-results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aggregate-results": {
+      "main": [
+        [
+          {
+            "node": "send-status-update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send-status-update": {
+      "main": [
+        [
+          {
+            "node": "webhook-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "OneClick",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useForm, Controller } from 'react-hook-form';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -14,8 +14,13 @@ interface ProviderFormProps {
   onSubmit: (data: Record<string, any>) => void;
 }
 
-function renderField(field: FieldConfig, register: any, control: any, errors: any) {
+function renderField(field: FieldConfig, register: any, control: any, errors: any, watchedValues: any = {}) {
   const fieldError = errors[field.name];
+  
+  // Conditional logic for Google Workspace custom password field
+  if (field.name === 'customPassword' && watchedValues.passwordMode !== 'custom') {
+    return null; // Don't render if password mode is not custom
+  }
 
   switch (field.type) {
     case 'boolean':
@@ -107,15 +112,29 @@ function renderField(field: FieldConfig, register: any, control: any, errors: an
       );
 
     default: // text, email, password, number
+      const isCustomPasswordRequired = field.name === 'customPassword' && watchedValues.passwordMode === 'custom';
+      const validationRules = {
+        required: (field.required || isCustomPasswordRequired) 
+          ? `${field.label} is required`
+          : false,
+        minLength: field.validation?.minLength ? {
+          value: field.validation.minLength,
+          message: `${field.label} must be at least ${field.validation.minLength} characters long`
+        } : undefined,
+      };
+
       return (
         <div key={field.name}>
-          <Label htmlFor={field.name}>{field.label}</Label>
+          <Label htmlFor={field.name}>
+            {field.label}
+            {(field.required || isCustomPasswordRequired) && (
+              <span className="text-red-500 ml-1">*</span>
+            )}
+          </Label>
           <Input
             id={field.name}
             type={field.type}
-            {...register(field.name, { 
-              required: field.required ? `${field.label} is required` : false 
-            })}
+            {...register(field.name, validationRules)}
             placeholder={field.placeholder}
             defaultValue={field.default}
             className={fieldError ? 'border-red-500' : ''}
@@ -132,6 +151,19 @@ function renderField(field: FieldConfig, register: any, control: any, errors: an
 }
 
 export default function ProviderForm({ provider, initialData, onSubmit }: ProviderFormProps) {
+  // Only use fields that belong to this provider
+  const providerFieldNames = [
+    ...provider.requiredFields.map(f => f.name),
+    ...(provider.optionalFields?.map(f => f.name) || [])
+  ];
+
+  // Filter initial data to only include relevant fields
+  const filteredInitialData = initialData ? 
+    Object.keys(initialData)
+      .filter(key => providerFieldNames.includes(key))
+      .reduce((obj, key) => ({ ...obj, [key]: initialData[key] }), {})
+    : {};
+
   const {
     register,
     control,
@@ -139,7 +171,7 @@ export default function ProviderForm({ provider, initialData, onSubmit }: Provid
     watch,
     formState: { errors },
   } = useForm({
-    defaultValues: initialData || {},
+    defaultValues: filteredInitialData,
   });
 
   const watchedValues = watch();
@@ -157,12 +189,17 @@ export default function ProviderForm({ provider, initialData, onSubmit }: Provid
       });
 
       if (hasRequiredFields) {
-        onSubmit(value);
+        // Only submit fields that belong to this provider
+        const cleanData = Object.keys(value)
+          .filter(key => providerFieldNames.includes(key))
+          .reduce((obj, key) => ({ ...obj, [key]: value[key] }), {});
+        
+        onSubmit(cleanData);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [watch, onSubmit, provider.requiredFields]);
+  }, [watch, onSubmit, provider.requiredFields, providerFieldNames]);
 
   return (
     <div className="space-y-6">
@@ -171,7 +208,7 @@ export default function ProviderForm({ provider, initialData, onSubmit }: Provid
           Required Fields
         </h4>
         {provider.requiredFields.map((field) =>
-          renderField(field, register, control, errors)
+          renderField(field, register, control, errors, watchedValues)
         )}
       </div>
 
@@ -181,7 +218,7 @@ export default function ProviderForm({ provider, initialData, onSubmit }: Provid
             Optional Fields
           </h4>
           {provider.optionalFields.map((field) =>
-            renderField(field, register, control, errors)
+            renderField(field, register, control, errors, watchedValues)
           )}
         </div>
       )}

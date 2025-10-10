@@ -1,0 +1,331 @@
+{
+  "name": "Slack Provision",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "workflow-trigger",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare SCIM user data for Slack\nconst employee = $json.employee;\nconst config = $json.config;\n\nconst nameParts = employee.fullName.split(' ');\nconst firstName = nameParts[0];\nconst lastName = nameParts.slice(1).join(' ') || nameParts[0];\n\nreturn {\n  requestId: $json.requestId,\n  scimUser: {\n    schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],\n    userName: employee.workEmail,\n    name: {\n      givenName: firstName,\n      familyName: lastName,\n      formatted: employee.fullName\n    },\n    emails: [{\n      value: employee.workEmail,\n      type: 'work',\n      primary: true\n    }],\n    active: true,\n    userType: config.userRole || 'regular',\n    title: employee.jobTitle || '',\n    department: employee.department || ''\n  },\n  config: config,\n  employee: employee,\n  application: 'slack'\n};"
+      },
+      "id": "prepare-scim-data",
+      "name": "Prepare SCIM Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.slack.com/scim/v2/Users",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $credentials.scimToken }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.scimUser) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "create-slack-user",
+      "name": "Create Slack User via SCIM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300],
+      "credentials": {
+        "slackScimApi": {
+          "id": "slack-scim-creds",
+          "name": "Slack SCIM Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.config.channels }}",
+              "rightValue": "",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-channels",
+      "name": "Has Channels?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Add user to specified channels\nconst channels = $json.config.channels || [];\nconst userId = $json.id; // From SCIM response\nconst results = [];\n\n// Store channel invitation data\nchannels.forEach(channel => {\n  results.push({\n    channel: channel,\n    status: 'pending',\n    userId: userId\n  });\n});\n\nreturn {\n  ...($json),\n  channelInvitations: results,\n  needsChannelInvites: channels.length > 0\n};"
+      },
+      "id": "prepare-channel-invites",
+      "name": "Prepare Channel Invitations",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 280]
+    },
+    {
+      "parameters": {
+        "resource": "channel",
+        "operation": "invite",
+        "channel": "={{ $json.channelInvitations[0].channel }}",
+        "users": ["={{ $json.id }}"]
+      },
+      "id": "invite-to-channels",
+      "name": "Invite to Channels",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1250, 260],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-bot-creds",
+          "name": "Slack Bot Token"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.config.userGroups }}",
+              "rightValue": "",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-user-groups",
+      "name": "Has User Groups?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/usergroups.users.update",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $credentials.botToken }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "formData",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "usergroup",
+              "value": "={{ $json.config.userGroups[0] }}"
+            },
+            {
+              "name": "users",
+              "value": "={{ $json.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "add-to-user-groups",
+      "name": "Add to User Groups",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 400],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-bot-creds",
+          "name": "Slack Bot Token"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format final result for Slack provisioning\nconst allInputs = $input.all();\nconst mainData = allInputs[0].json;\n\nconst success = mainData.id ? true : false;\n\nreturn {\n  application: 'slack',\n  status: success ? 'success' : 'failed',\n  userId: mainData.employee?.workEmail,\n  externalId: mainData.id || null,\n  details: {\n    slackUserId: mainData.id,\n    userName: mainData.userName,\n    userRole: mainData.config?.userRole || 'regular',\n    channels: mainData.channelInvitations || [],\n    userGroups: mainData.config?.userGroups || [],\n    active: mainData.active !== false\n  },\n  workspaceUrl: `https://${mainData.config?.workspaceId || 'workspace'}.slack.com`,\n  error: mainData.error || null,\n  completedAt: new Date().toISOString()\n};"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 350]
+    },
+    {
+      "parameters": {
+        "content": "## Slack Provisioning Workflow\n\nThis workflow:\n1. Creates user via SCIM API\n2. Invites to specified channels\n3. Adds to user groups\n4. Returns standardized result\n\nRequires:\n- SCIM token for user creation\n- Bot token for channel/group operations",
+        "height": 180,
+        "width": 300
+      },
+      "id": "workflow-note",
+      "name": "Workflow Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 100]
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ $json.error?.message || 'Failed to provision Slack account' }}"
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [650, 500]
+    }
+  ],
+  "connections": {
+    "workflow-trigger": {
+      "main": [
+        [
+          {
+            "node": "prepare-scim-data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prepare-scim-data": {
+      "main": [
+        [
+          {
+            "node": "create-slack-user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create-slack-user": {
+      "main": [
+        [
+          {
+            "node": "check-channels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check-channels": {
+      "main": [
+        [
+          {
+            "node": "prepare-channel-invites",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "check-user-groups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prepare-channel-invites": {
+      "main": [
+        [
+          {
+            "node": "invite-to-channels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "invite-to-channels": {
+      "main": [
+        [
+          {
+            "node": "check-user-groups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check-user-groups": {
+      "main": [
+        [
+          {
+            "node": "add-to-user-groups",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "format-result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "add-to-user-groups": {
+      "main": [
+        [
+          {
+            "node": "format-result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "error-handler-workflow"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "OneClick",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "Slack",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

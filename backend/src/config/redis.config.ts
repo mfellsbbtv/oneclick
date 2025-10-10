@@ -7,9 +7,7 @@ export const redisConfig = (): BullModuleOptions => ({
     password: process.env.REDIS_PASSWORD,
     db: parseInt(process.env.REDIS_DB, 10) || 0,
     maxRetriesPerRequest: 3,
-    retryDelayOnFailover: 100,
     enableReadyCheck: false,
-    maxLoadingTimeout: 1000,
   },
   defaultJobOptions: {
     removeOnComplete: 100,

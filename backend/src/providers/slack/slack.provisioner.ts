@@ -12,7 +12,7 @@ import axios, { AxiosInstance } from 'axios';
 export interface SlackInput {
   fullName: string;
   workEmail: string;
-  userRole?: 'member' | 'admin';
+  userRole?: 'member' | 'single_channel_guest' | 'multi_channel_guest';
   defaultChannels?: string[];
   userGroups?: string[];
   teamId?: string;
@@ -178,7 +178,9 @@ export class SlackProvisioner implements Provisioner {
 
           this.logger.log(`Updated existing Slack user: ${data.workEmail}`);
         } else {
-          // Create new user
+          // Create new user with appropriate user type
+          const userType = data.userRole === 'member' ? 'regular' : 'guest';
+          
           const createResponse = await this.scimClient.post('/Users', {
             schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
             userName: data.workEmail,
@@ -194,6 +196,7 @@ export class SlackProvisioner implements Provisioner {
               },
             ],
             active: true,
+            userType: userType,
           });
 
           slackUserId = createResponse.data.id;
@@ -222,8 +225,13 @@ export class SlackProvisioner implements Provisioner {
       }
 
       // Step 2: Invite to channels (if user was created)
+      // For single-channel guests, only invite to first channel
+      // For multi-channel guests and members, invite to all selected channels
       if (userCreated && data.defaultChannels && data.defaultChannels.length > 0) {
-        for (const channel of data.defaultChannels) {
+        const channelsToInvite = data.userRole === 'single_channel_guest' 
+          ? data.defaultChannels.slice(0, 1) 
+          : data.defaultChannels;
+        for (const channel of channelsToInvite) {
           try {
             // First, get the channel ID
             const channelResponse = await this.apiClient.post('/conversations.list', {

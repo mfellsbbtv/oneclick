@@ -10,7 +10,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { getProvider } from '@/lib/providers';
+import { getProvider, AppProvider } from '@/lib/providers';
+import { GoogleWorkspaceSummary } from '@/components/providers/GoogleWorkspaceSummary';
+import { SlackSummary } from '@/components/providers/SlackSummary';
 
 // Dynamic import of provider forms
 const ProviderForm = dynamic(() => import('@/components/providers/ProviderForm'), {
@@ -140,12 +142,13 @@ function WizardContent() {
                           <span className="font-medium">{provider?.name}</span>
                         </div>
                         {config && (
-                          <div className="mt-1 text-sm text-gray-600">
-                            {Object.entries(config).slice(0, 2).map(([key, value]) => (
-                              <div key={key}>
-                                {key}: {Array.isArray(value) ? value.join(', ') : String(value)}
-                              </div>
-                            ))}
+                          <div className="mt-1">
+                            {app === AppProvider.GOOGLE_WORKSPACE && (
+                              <GoogleWorkspaceSummary formData={config} />
+                            )}
+                            {app === AppProvider.SLACK && (
+                              <SlackSummary formData={config} />
+                            )}
                           </div>
                         )}
                       </div>
@@ -183,16 +186,16 @@ function WizardContent() {
           <StepIndicator
             currentStep={currentStep}
             steps={[
-              { id: 0, title: 'User Info', description: 'Basic information' },
+              { id: 0, title: 'User Info', description: '' },
               ...selectedApps.map((app, index) => ({
                 id: index + 1,
                 title: getProvider(app)?.name || app,
-                description: 'Configure settings',
+                description: '',
               })),
               { 
                 id: selectedApps.length + 1, 
                 title: 'Review', 
-                description: 'Confirm and submit' 
+                description: '' 
               },
             ]}
           />
