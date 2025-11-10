@@ -72,7 +72,7 @@ export class GoogleWorkspaceProvisioner implements Provisioner {
         primaryOrgUnit: data.primaryOrgUnit || '/',
         passwordMode: data.passwordMode || 'auto',
         changePasswordAtNextLogin: data.changePasswordAtNextLogin !== undefined ? data.changePasswordAtNextLogin : false,
-        licenseSku: data.licenseSku || '1010020027',
+        licenseSku: data.licenseSku || '1010020026', // Enterprise Standard
       },
     };
   }

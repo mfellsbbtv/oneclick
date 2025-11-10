@@ -10,7 +10,7 @@ interface GoogleWorkspaceSummaryProps {
 export function GoogleWorkspaceSummary({ formData }: GoogleWorkspaceSummaryProps) {
   const {
     primaryOrgUnit = '/',
-    licenseSku = '1010020027',
+    licenseSku = '1010020026', // Enterprise Standard
     passwordMode = 'auto',
     customPassword,
     changePasswordAtNextLogin = false,

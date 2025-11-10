@@ -1,0 +1,28 @@
+{
+  "userInfo": {
+    "firstName": "Martin",
+    "lastName": "Short",
+    "email": "mshort@rhei.com"
+  },
+  "selectedApps": {
+    "googleWorkspace": true,
+    "microsoft365": true,
+    "clickup": false,
+    "jira": false
+  },
+  "googleWorkspace": {
+    "organizationalUnit": "/Engineering",
+    "selectedGroups": [
+      "engineers@rhei.com",
+      "all-staff@rhei.com"
+    ]
+  },
+  "microsoft365": {
+    "selectedLicenses": [
+      "2e3c4023-80f6-4711-aa5d-29e0ecb46835"
+    ],
+    "selectedGroups": [
+      "086186a4-7af3-482c-8035-ace31053b6c4"
+    ]
+  }
+}

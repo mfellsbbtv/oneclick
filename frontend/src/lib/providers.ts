@@ -49,25 +49,28 @@ export const providers: Record<AppProvider, ProviderConfig> = {
       {
         name: 'primaryOrgUnit',
         label: 'Organization Unit',
-        type: 'text',
-        required: true,
-        default: '/',
-        placeholder: '/',
-        description: 'The organizational unit path for the user',
-      },
-      {
-        name: 'licenseSku',
-        label: 'License SKU',
         type: 'select',
         required: true,
         options: [
-          { value: '1010020027', label: 'Business Starter' },
-          { value: '1010020028', label: 'Business Standard' },
-          { value: '1010020025', label: 'Business Plus' },
-          { value: '1010020026', label: 'Enterprise Standard' },
-          { value: '1010020030', label: 'Enterprise Plus' },
+          { value: '/', label: '/ (Root)' },
+          { value: '/Administrators', label: 'Administrators' },
+          { value: '/Archived', label: 'Archived' },
+          { value: '/BBTV Website Share', label: 'BBTV Website Share' },
+          { value: '/Consultants', label: 'Consultants' },
+          { value: '/Developers', label: 'Developers' },
+          { value: '/DO NOT DELETE', label: 'DO NOT DELETE' },
+          { value: '/Google Chat', label: 'Google Chat' },
+          { value: '/Google Drive Document Share', label: 'Google Drive Document Share' },
+          { value: '/Google Drive Share', label: 'Google Drive Share' },
+          { value: '/Google Drive Visitor Access', label: 'Google Drive Visitor Access' },
+          { value: '/MFA Disabled Users', label: 'MFA Disabled Users' },
+          { value: '/QA Test Accounts', label: 'QA Test Accounts' },
+          { value: '/Service Accounts', label: 'Service Accounts' },
+          { value: '/Service Accounts/App Passwords', label: 'Service Accounts → App Passwords' },
+          { value: '/To Be Archived', label: 'To Be Archived' },
         ],
-        default: '1010020027',
+        default: '/',
+        description: 'The organizational unit path for the user',
       },
     ],
     optionalFields: [
@@ -182,28 +185,66 @@ export const providers: Record<AppProvider, ProviderConfig> = {
         default: 'US',
       },
       {
-        name: 'licenseSKUs',
-        label: 'License SKUs',
+        name: 'licenses',
+        label: 'Microsoft 365 Licenses',
         type: 'multiselect',
         required: true,
         options: [
-          { value: 'O365_BUSINESS_ESSENTIALS', label: 'Business Basic' },
-          { value: 'O365_BUSINESS_PREMIUM', label: 'Business Standard' },
-          { value: 'O365_BUSINESS', label: 'Business Premium' },
-          { value: 'ENTERPRISEPACK', label: 'E3' },
-          { value: 'ENTERPRISEPREMIUM', label: 'E5' },
+          // Microsoft 365 Business
+          { value: 'f245ecc8-75af-4f8e-b61f-27d8114de5f3', label: '🏢 Microsoft 365 Business Premium' },
+          { value: 'cdd28e44-67e3-425e-be4c-737fab2899d3', label: '💼 Microsoft 365 Business Basic' },
+          
+          // Power BI
+          { value: 'f8a1db68-be16-40ed-86d5-cb42ce701560', label: '📊 Power BI Pro' },
+          { value: 'a403ebcc-fae0-4ca2-8c8c-7a907fd6c235', label: '📈 Power BI Standard' },
+          
+          // Dynamics 365
+          { value: '1e1a282c-9c54-43a2-9310-98ef728faace', label: '💰 Dynamics 365 Sales Enterprise' },
+          { value: '8e7a3d30-d97d-43ab-837c-d7701cef83dc', label: '👥 Dynamics 365 Team Members' },
+          { value: '2880026b-2b0c-4251-8656-5d41ff11e3aa', label: '📋 Dynamics 365 Business Central Essential' },
+          { value: '2e3c4023-80f6-4711-aa5d-29e0ecb46835', label: '🤝 Dynamics 365 Business Central Team Member' },
+          { value: '9a1e33ed-9697-43f3-b84c-1b0959dbb1d4', label: '💵 Dynamics 365 Financials Accountant' },
+          { value: '238e2f8d-e429-4035-94db-6926be4ffe7b', label: '📢 Dynamics 365 Marketing' },
+          
+          // Power Platform
+          { value: 'b30411f5-fea1-4a59-9ad9-3db7c7ead579', label: '⚡ Power Apps Per User' },
+          { value: 'b4d7b828-e8dc-4518-91f9-e123ae48440d', label: '📱 Power Apps Per App' },
+          { value: 'dcb1a3ae-b33f-4487-846a-a640262fadf4', label: '🔄 Power Apps (Viral)' },
+          { value: '5b631642-bd26-49fe-bd20-1daaa972ef80', label: '👨‍💻 Power Apps Developer' },
+          { value: 'f30db892-07e9-47e9-837c-80727f46fd3d', label: '🌊 Power Automate Free' },
+          
+          // Azure AD
+          { value: '078d2b04-f1bd-4111-bbd4-b4b1b354cef4', label: '🔐 Azure AD Premium P1' },
+          
+          // Storage & Capacity (Company-level, usually not per-user)
+          { value: 'e612d426-6bc3-4181-9658-91aa906b0ac0', label: '💾 Dataverse Database Capacity' },
+          { value: '631d5fb1-a668-4c2a-9427-8830665a742e', label: '📁 Dataverse File Capacity' },
+          { value: '448b063f-9cc6-42fc-a0e6-40e08724a395', label: '📝 Dataverse Log Capacity' },
+          { value: '328dc228-00bc-48c6-8b09-1fbc8bc3435d', label: '🗄️ CRM Storage' },
         ],
-        default: ['O365_BUSINESS_ESSENTIALS'],
+        default: ['f245ecc8-75af-4f8e-b61f-27d8114de5f3'],
+        description: '📦 Select one or more licenses to assign to the user',
       },
     ],
     optionalFields: [
+      {
+        name: 'groups',
+        label: 'Security Groups',
+        type: 'multiselect',
+        required: false,
+        options: [
+          { value: '61c005b9-d8a8-495d-964a-2da005fe682e', label: '🏢 CRM Production' },
+        ],
+        default: [],
+        description: '🔒 Select security groups to add the user to',
+      },
       {
         name: 'requirePasswordChange',
         label: 'Require Password Change',
         type: 'boolean',
         required: false,
         default: true,
-        description: 'Force user to change password on first login',
+        description: '🔄 Force user to change password on first login',
       },
       {
         name: 'department',
@@ -211,6 +252,7 @@ export const providers: Record<AppProvider, ProviderConfig> = {
         type: 'text',
         required: false,
         placeholder: 'Engineering',
+        description: '🏢 User\'s department (optional)',
       },
       {
         name: 'jobTitle',
@@ -218,6 +260,15 @@ export const providers: Record<AppProvider, ProviderConfig> = {
         type: 'text',
         required: false,
         placeholder: 'Software Engineer',
+        description: '💼 User\'s job title (optional)',
+      },
+      {
+        name: 'manager',
+        label: 'Manager Email',
+        type: 'email',
+        required: false,
+        placeholder: 'manager@company.com',
+        description: '👨‍💼 Direct manager\'s email address (optional)',
       },
     ],
   },
