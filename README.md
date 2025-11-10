@@ -4,7 +4,9 @@ Enterprise-grade account provisioning system for automating new hire onboarding 
 
 ## Features
 
-- 🚀 **Multi-Provider Support**: Google Workspace, Slack, Microsoft 365, ClickUp, Jira, Confluence, GitHub, Zoom, HubSpot
+- 🚀 **Multi-Provider Support**: Google Workspace, Microsoft 365, ClickUp, Jira, Confluence, GitHub, Zoom, HubSpot
+- ⏰ **Scheduled Provisioning**: Go-based scheduler for delayed user creation with cron jobs
+- 🏷️ **Tag-Based Scheduling**: Automatically provision users tagged with "to be created"
 - 🔄 **Idempotent Operations**: Safe to retry, prevents duplicate accounts
 - 📊 **Real-time Progress Tracking**: Monitor provisioning status for each application
 - 🔐 **Enterprise Security**: OIDC authentication, audit logging, encrypted secrets
@@ -17,6 +19,7 @@ Enterprise-grade account provisioning system for automating new hire onboarding 
 
 - **Frontend**: Next.js 14, TypeScript, React Hook Form, Zod, Tailwind CSS
 - **Backend**: NestJS, TypeScript, TypeORM, PostgreSQL
+- **Scheduler**: Go 1.21+, Cron, PostgreSQL
 - **Queue**: Redis, BullMQ
 - **Auth**: NextAuth.js (OIDC)
 - **Deployment**: Docker, Docker Compose

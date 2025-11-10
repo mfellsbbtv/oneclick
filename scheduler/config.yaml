@@ -1,0 +1,27 @@
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: password
+  dbname: oneclick
+  sslmode: disable
+
+scheduler:
+  check_interval: "*/1 * * * *"  # Check every minute (cron format)
+  timezone: "America/Los_Angeles"
+  max_retries: 3
+  retry_delay: 300  # 5 minutes in seconds
+
+provisioning:
+  api_url: "http://localhost:3000/api/provision-n8n"
+  timeout: 300  # 5 minutes
+  retry_attempts: 3
+  retry_delay: 60  # 1 minute
+
+logging:
+  level: info
+  format: text  # text or json
+  output: stdout  # stdout or file path
+
+server:
+  port: 8080
