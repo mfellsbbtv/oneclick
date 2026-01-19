@@ -1,154 +1,97 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { buildOrchestratorPayload, validateOrchestratorPayload } from '@/lib/orchestrator-payload-builder';
+import { logProvision } from '@/lib/logger';
 
-// n8n webhook endpoints configuration
-const N8N_WEBHOOKS = {
-  orchestrator: process.env.N8N_ORCHESTRATOR_WEBHOOK || 'https://your-n8n-instance.com/webhook/master-orchestrator',
-  google: process.env.N8N_GOOGLE_WEBHOOK || 'https://your-n8n-instance.com/webhook/google-provision',
-  microsoft: process.env.N8N_MICROSOFT_WEBHOOK || 'https://your-n8n-instance.com/webhook/microsoft-provision-enhanced',
-};
+// n8n orchestrator webhook URL
+const N8N_ORCHESTRATOR_WEBHOOK = process.env.N8N_ORCHESTRATOR_WEBHOOK || process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL;
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    
+
     console.log('🚀 Processing provisioning request:', {
-      employee: body.employee.fullName,
-      applications: Object.keys(body.applications).filter(key => 
-        key !== 'google' && key !== 'microsoft' && body.applications[key]
-      ),
+      employee: `${body.employee.firstName} ${body.employee.lastName}`,
+      email: body.employee.email,
+      applications: {
+        google: body.applications.google,
+        microsoft: body.applications.microsoft,
+        jira: body.applications.jira,
+      },
     });
 
-    const provisioningRequests = [];
-    const results = [];
+    // Build orchestrator payload
+    const orchestratorPayload = buildOrchestratorPayload(body);
 
-    // Prepare Google Workspace provisioning
-    if (body.applications.google && body.applications['google-workspace']) {
-      const googlePayload = {
-        employee: body.employee,
-        applications: {
-          'google-workspace': {
-            ...body.applications['google-workspace'],
-            primaryEmail: body.employee.workEmail,
-            recoveryEmail: body.employee.personalEmail,
-          },
-        },
-      };
-
-      provisioningRequests.push(
-        fetch(N8N_WEBHOOKS.google, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(googlePayload),
-        }).then(async (res) => {
-          const result = await res.json();
-          return {
-            provider: 'google-workspace',
-            status: res.ok ? 'success' : 'error',
-            data: result,
-          };
-        }).catch(error => ({
-          provider: 'google-workspace',
+    // Validate payload
+    const validation = validateOrchestratorPayload(orchestratorPayload);
+    if (!validation.valid) {
+      console.error('❌ Payload validation failed:', validation.errors);
+      return NextResponse.json(
+        {
+          id: `prov-error-${Date.now()}`,
           status: 'error',
-          error: error.message,
-        }))
+          message: `Validation failed: ${validation.errors.join(', ')}`,
+          timestamp: new Date().toISOString(),
+        },
+        { status: 400 }
       );
     }
 
-    // Prepare Microsoft 365 provisioning
-    if (body.applications.microsoft && body.applications['microsoft-365']) {
-      const microsoftPayload = {
-        employee: {
-          ...body.employee,
-          usageLocation: body.applications['microsoft-365'].usageLocation,
-        },
-        applications: {
-          microsoft365: {
-            ...body.applications['microsoft-365'],
-            userPrincipalName: body.employee.workEmail,
-          },
-        },
-      };
+    console.log('📤 Sending to orchestrator:', orchestratorPayload);
 
-      provisioningRequests.push(
-        fetch(N8N_WEBHOOKS.microsoft, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(microsoftPayload),
-        }).then(async (res) => {
-          const result = await res.json();
-          return {
-            provider: 'microsoft-365',
-            status: res.ok ? 'success' : 'error',
-            data: result,
-          };
-        }).catch(error => ({
-          provider: 'microsoft-365',
-          status: 'error',
-          error: error.message,
-        }))
-      );
-    }
-
-    // Alternative: Use master orchestrator for all provisioning
-    // Uncomment this section if you want to use a single orchestrator workflow
-    /*
-    const orchestratorPayload = {
-      employee: body.employee,
-      applications: {
-        ...(body.applications.google && {
-          'google-workspace': body.applications['google-workspace'],
-        }),
-        ...(body.applications.microsoft && {
-          'microsoft-365': body.applications['microsoft-365'],
-        }),
-      },
-    };
-
-    const orchestratorResponse = await fetch(N8N_WEBHOOKS.orchestrator, {
+    // Send to n8n orchestrator webhook
+    const orchestratorResponse = await fetch(N8N_ORCHESTRATOR_WEBHOOK!, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(orchestratorPayload),
     });
 
     if (!orchestratorResponse.ok) {
-      throw new Error(`Orchestrator responded with ${orchestratorResponse.status}`);
+      const errorText = await orchestratorResponse.text();
+      console.error('❌ Orchestrator error:', errorText);
+      throw new Error(`Orchestrator responded with ${orchestratorResponse.status}: ${errorText}`);
     }
 
     const result = await orchestratorResponse.json();
-    */
 
-    // Execute all provisioning requests in parallel
-    if (provisioningRequests.length > 0) {
-      const provisioningResults = await Promise.all(provisioningRequests);
-      results.push(...provisioningResults);
-    }
+    console.log('✅ Orchestrator response:', result);
 
-    // Compile response
+    // Transform orchestrator response to frontend format
     const response = {
       id: `prov-${Date.now()}`,
-      status: results.every(r => r.status === 'success') ? 'success' : 'partial',
-      timestamp: new Date().toISOString(),
+      status: result.success ? 'success' : 'error',
+      timestamp: result.timestamp || new Date().toISOString(),
       employee: {
-        name: body.employee.fullName,
-        email: body.employee.workEmail,
+        name: `${body.employee.firstName} ${body.employee.lastName}`,
+        email: body.employee.email,
         department: body.employee.department,
         jobTitle: body.employee.jobTitle,
       },
-      results,
-      summary: {
-        total: results.length,
-        successful: results.filter(r => r.status === 'success').length,
-        failed: results.filter(r => r.status === 'error').length,
+      provisioning: result.provisioning || {
+        totalApps: result.appResults?.length || 0,
+        successful: result.appResults?.filter((r: any) => r.success).length || 0,
+        failed: result.appResults?.filter((r: any) => !r.success).length || 0,
       },
+      results: result.appResults || [],
     };
 
-    console.log('✅ Provisioning completed:', response.summary);
+    console.log('✅ Provisioning completed:', response.provisioning);
+
+    // Log the provisioning operation
+    try {
+      logProvision({
+        request: body,
+        response: response,
+      });
+    } catch (logError) {
+      console.error('Failed to write provision log:', logError);
+    }
 
     return NextResponse.json(response, { status: 200 });
 
   } catch (error) {
     console.error('❌ Provisioning error:', error);
-    
+
     return NextResponse.json(
       {
         id: `prov-error-${Date.now()}`,

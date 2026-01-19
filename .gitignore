@@ -89,3 +89,13 @@ playwright/.cache/
 *.pid
 *.seed
 *.pid.lock
+# Config files with secrets
+.config/
+config/
+
+# N8N Workflow exports (contain credentials)
+.n8n-workflows/
+
+# Test scripts with credentials
+test-*.js
+check-user.sh

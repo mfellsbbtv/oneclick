@@ -1,0 +1,23 @@
+{
+  "userInfo": {
+    "firstName": "Test",
+    "lastName": "User",
+    "email": "tuser@rhei.com"
+  },
+  "selectedApps": {
+    "googleWorkspace": {
+      "enabled": true,
+      "organizationalUnit": "/Consultants",
+      "selectedGroups": ["group-id-1", "group-id-2"]
+    },
+    "microsoft365": {
+      "enabled": false
+    },
+    "clickup": {
+      "enabled": false
+    },
+    "jira": {
+      "enabled": false
+    }
+  }
+}
