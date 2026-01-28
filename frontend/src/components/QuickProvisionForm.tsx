@@ -1,16 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { MICROSOFT_LICENSES, LICENSE_RECOMMENDATIONS, MICROSOFT_GROUPS, getLicensesGroupedByCategory } from '@/lib/microsoft-config';
+import { MICROSOFT_LICENSES, LICENSE_RECOMMENDATIONS, MICROSOFT_GROUPS, getLicensesGroupedByCategory, MicrosoftLicense } from '@/lib/microsoft-config';
 import { GOOGLE_GROUPS, GOOGLE_GROUP_RECOMMENDATIONS } from '@/lib/google-config';
 import { GoogleGroupsSelector } from '@/components/GoogleGroupsSelector';
 import { MicrosoftGroupsSelector } from '@/components/MicrosoftGroupsSelector';
-import { CheckCircle2, Circle, AlertCircle, Loader2, Users, Mail, Building, Briefcase, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, Circle, AlertCircle, Loader2, Users, Mail, Building, Briefcase, AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface QuickProvisionFormProps {
   onSubmit?: (data: ProvisionData) => void;
@@ -53,6 +53,9 @@ interface ProvisionData {
 
 export function QuickProvisionForm({ onSubmit }: QuickProvisionFormProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [microsoftLicenses, setMicrosoftLicenses] = useState<MicrosoftLicense[]>(MICROSOFT_LICENSES);
+  const [isRefreshingLicenses, setIsRefreshingLicenses] = useState(false);
+  const [lastLicenseRefresh, setLastLicenseRefresh] = useState<string | null>(null);
   const [provisionData, setProvisionData] = useState<ProvisionData>({
     employee: {
       firstName: '',
@@ -95,6 +98,45 @@ export function QuickProvisionForm({ onSubmit }: QuickProvisionFormProps) {
     { value: 'finance', label: '💵 Finance', icon: Briefcase },
     { value: 'general', label: '👤 General User', icon: Users },
   ];
+
+  // Refresh Microsoft licenses from Graph API
+  const refreshMicrosoftLicenses = useCallback(async () => {
+    setIsRefreshingLicenses(true);
+    try {
+      const response = await fetch('/api/microsoft-licenses');
+      const data = await response.json();
+
+      if (data.success && data.licenses) {
+        setMicrosoftLicenses(data.licenses);
+        setLastLicenseRefresh(data.timestamp);
+        console.log(`✅ Refreshed ${data.licenses.length} Microsoft licenses`);
+      } else {
+        console.error('Failed to refresh licenses:', data.error);
+      }
+    } catch (error) {
+      console.error('Error refreshing Microsoft licenses:', error);
+    } finally {
+      setIsRefreshingLicenses(false);
+    }
+  }, []);
+
+  // Auto-refresh licenses when Microsoft 365 section is enabled
+  useEffect(() => {
+    if (provisionData.applications.microsoft && microsoftLicenses === MICROSOFT_LICENSES) {
+      refreshMicrosoftLicenses();
+    }
+  }, [provisionData.applications.microsoft, refreshMicrosoftLicenses, microsoftLicenses]);
+
+  // Group licenses by category (using dynamic licenses)
+  const getLicensesGroupedByCategoryDynamic = useCallback(() => {
+    return microsoftLicenses.reduce((acc, license) => {
+      if (!acc[license.category]) {
+        acc[license.category] = [];
+      }
+      acc[license.category].push(license);
+      return acc;
+    }, {} as Record<string, MicrosoftLicense[]>);
+  }, [microsoftLicenses]);
 
   // Google Workspace Organizational Units (from your domain)
   const googleOrgUnits = [
@@ -444,10 +486,29 @@ export function QuickProvisionForm({ onSubmit }: QuickProvisionFormProps) {
               <div className="ml-8 p-3 bg-gray-50 rounded-lg space-y-4">
                 {/* Licenses Section */}
                 <div>
-                  <Label className="text-sm font-medium">Licenses</Label>
-                  <p className="text-xs text-gray-500 mb-2">Select licenses to assign to this user</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label className="text-sm font-medium">Licenses</Label>
+                    <button
+                      type="button"
+                      onClick={refreshMicrosoftLicenses}
+                      disabled={isRefreshingLicenses}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                      title="Refresh licenses from Microsoft"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${isRefreshingLicenses ? 'animate-spin' : ''}`} />
+                      {isRefreshingLicenses ? 'Refreshing...' : 'Refresh'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Select licenses to assign to this user
+                    {lastLicenseRefresh && (
+                      <span className="ml-2 text-gray-400">
+                        (Updated: {new Date(lastLicenseRefresh).toLocaleTimeString()})
+                      </span>
+                    )}
+                  </p>
 
-                  {Object.entries(getLicensesGroupedByCategory()).map(([category, licenses]) => (
+                  {Object.entries(getLicensesGroupedByCategoryDynamic()).map(([category, licenses]) => (
                     <div key={category} className="mb-3">
                       <div className="text-xs font-medium text-gray-600 mb-1 uppercase tracking-wide">
                         {category}
@@ -522,7 +583,7 @@ export function QuickProvisionForm({ onSubmit }: QuickProvisionFormProps) {
                     <div className="mt-2 p-2 bg-blue-50 rounded text-sm">
                       <span className="font-medium">Selected:</span>{' '}
                       {provisionData.applications.microsoftConfig.licenses.map(id => {
-                        const license = MICROSOFT_LICENSES.find(l => l.skuId === id);
+                        const license = microsoftLicenses.find(l => l.skuId === id);
                         return license?.name || id;
                       }).join(', ')}
                     </div>

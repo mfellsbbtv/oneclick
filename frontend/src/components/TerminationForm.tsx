@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { AlertCircle, CheckCircle2, Loader2, UserMinus, Calendar, Mail, Shield } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Circle, Loader2, UserMinus, Calendar, Mail, Shield } from 'lucide-react';
 
 // Available domains for the organization
 const AVAILABLE_DOMAINS = [
@@ -227,12 +227,17 @@ export function TerminationForm() {
                     <div className="mt-2 space-y-1 text-xs">
                       {Object.entries(appResult.results).map(([step, stepResult]) => (
                         <div key={step} className="flex items-center gap-2">
-                          {stepResult.success ? (
+                          {stepResult && stepResult.success ? (
                             <CheckCircle2 className="h-3 w-3 text-green-500" />
+                          ) : stepResult === null ? (
+                            <Circle className="h-3 w-3 text-gray-400" />
                           ) : (
                             <AlertCircle className="h-3 w-3 text-red-500" />
                           )}
-                          <span className="capitalize">{step.replace(/([A-Z])/g, ' $1').trim()}</span>
+                          <span className="capitalize">
+                            {step.replace(/([A-Z])/g, ' $1').trim()}
+                            {stepResult === null && ' (skipped)'}
+                          </span>
                         </div>
                       ))}
                     </div>

@@ -206,15 +206,15 @@ export default function SuccessPage() {
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'success':
-        return 'Success';
+        return 'Complete';
       case 'in_progress':
-        return 'In Progress';
+        return 'Processing';
       case 'pending':
-        return 'Pending';
+        return 'Queued';
       case 'error':
         return 'Error';
       case 'not_selected':
-        return 'Not Selected';
+        return 'Skipped';
       default:
         return status;
     }
@@ -234,7 +234,7 @@ export default function SuccessPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <CheckCircle className="w-6 h-6 text-green-500" />
-              Provisioning Started Successfully
+              Provisioning Request Submitted
             </CardTitle>
             <Link href="/terminate">
               <Button variant="outline" size="sm" className="flex items-center gap-2 border-red-200 text-red-600 hover:bg-red-50">
@@ -247,23 +247,32 @@ export default function SuccessPage() {
 
         <CardContent className="space-y-6">
           {provisioningData && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-blue-800">
-                <strong>Employee:</strong> {provisioningData.request.employee.firstName} {provisioningData.request.employee.lastName}
-                <br />
-                <strong>Email:</strong> {provisioningData.request.employee.email}
-                {provisioningData.request.employee.department && (
-                  <>
-                    <br />
-                    <strong>Department:</strong> {provisioningData.request.employee.department}
-                  </>
-                )}
-              </p>
-            </div>
+            <>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <p className="text-green-800">
+                  Your provisioning request has been submitted and is being processed.
+                  <strong> {provisioningData.request.employee.personalEmail}</strong> will receive a confirmation email
+                  with login credentials once all accounts are ready.
+                </p>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-blue-800">
+                  <strong>Employee:</strong> {provisioningData.request.employee.firstName} {provisioningData.request.employee.lastName}
+                  <br />
+                  <strong>Work Email:</strong> {provisioningData.request.employee.email}
+                  {provisioningData.request.employee.department && (
+                    <>
+                      <br />
+                      <strong>Department:</strong> {provisioningData.request.employee.department}
+                    </>
+                  )}
+                </p>
+              </div>
+            </>
           )}
 
           <div>
-            <h3 className="text-lg font-semibold mb-4">Provisioning Status</h3>
+            <h3 className="text-lg font-semibold mb-4">Requested Services</h3>
 
             {loading ? (
               <div className="space-y-3">
