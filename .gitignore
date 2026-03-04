@@ -96,6 +96,9 @@ config/
 # N8N Workflow exports (contain credentials)
 .n8n-workflows/
 
+# MCP server config (contains bearer tokens)
+.mcp.json
+
 # Test scripts with credentials
 test-*.js
 check-user.sh

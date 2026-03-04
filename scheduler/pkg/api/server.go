@@ -75,13 +75,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
 }
 
-// createSchedule creates a new scheduled provision
+// createSchedule creates a new scheduled job (provision or terminate)
 func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Employee     database.EmployeeData     `json:"employee"`
-		Applications database.ApplicationsData `json:"applications"`
-		ScheduleTime time.Time                 `json:"schedule_time"`
-		Tags         []string                  `json:"tags"`
+		JobType      string          `json:"job_type"`
+		Payload      json.RawMessage `json:"payload"`
+		ScheduleTime time.Time       `json:"schedule_time"`
+		Tags         []string        `json:"tags"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -89,49 +89,59 @@ func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate
-	if req.Employee.FullName == "" || req.Employee.WorkEmail == "" {
-		respondError(w, http.StatusBadRequest, "Employee full name and email are required")
+	// Validate job type
+	if req.JobType != database.JobTypeProvision && req.JobType != database.JobTypeTerminate {
+		respondError(w, http.StatusBadRequest, "job_type must be 'provision' or 'terminate'")
 		return
 	}
 
+	// Validate payload
+	if len(req.Payload) == 0 {
+		respondError(w, http.StatusBadRequest, "payload is required")
+		return
+	}
+
+	// Validate schedule time
 	if req.ScheduleTime.IsZero() {
-		respondError(w, http.StatusBadRequest, "Schedule time is required")
+		respondError(w, http.StatusBadRequest, "schedule_time is required")
 		return
 	}
 
 	if req.ScheduleTime.Before(time.Now()) {
-		respondError(w, http.StatusBadRequest, "Schedule time must be in the future")
+		respondError(w, http.StatusBadRequest, "schedule_time must be in the future")
 		return
 	}
 
-	// Create scheduled provision
-	sp := &database.ScheduledProvision{
-		EmployeeData: req.Employee,
-		Applications: req.Applications,
+	job := &database.ScheduledJob{
+		JobType:      req.JobType,
+		Payload:      database.JSONB(req.Payload),
 		ScheduleTime: req.ScheduleTime,
 		Tags:         req.Tags,
 	}
 
-	if err := s.db.CreateScheduledProvision(sp); err != nil {
-		log.Errorf("Failed to create scheduled provision: %v", err)
+	if err := s.db.CreateScheduledJob(job); err != nil {
+		log.Errorf("Failed to create scheduled job: %v", err)
 		respondError(w, http.StatusInternalServerError, "Failed to create schedule")
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, sp)
+	respondJSON(w, http.StatusCreated, job)
 }
 
-// listSchedules lists scheduled provisions with filters
+// listSchedules lists scheduled jobs with optional filters
 func (s *Server) listSchedules(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
-	var status, tag *string
-	if s := query.Get("status"); s != "" {
-		status = &s
+	var status, tag, jobType *string
+
+	if sv := query.Get("status"); sv != "" {
+		status = &sv
 	}
-	if t := query.Get("tag"); t != "" {
-		tag = &t
+	if tv := query.Get("tag"); tv != "" {
+		tag = &tv
+	}
+	if jv := query.Get("type"); jv != "" {
+		jobType = &jv
 	}
 
 	limit := 100
@@ -148,17 +158,17 @@ func (s *Server) listSchedules(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	provisions, err := s.db.ListProvisions(status, tag, limit, offset)
+	jobs, err := s.db.ListJobs(status, tag, jobType, limit, offset)
 	if err != nil {
-		log.Errorf("Failed to list provisions: %v", err)
+		log.Errorf("Failed to list jobs: %v", err)
 		respondError(w, http.StatusInternalServerError, "Failed to list schedules")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, provisions)
+	respondJSON(w, http.StatusOK, jobs)
 }
 
-// getSchedule retrieves a specific scheduled provision
+// getSchedule retrieves a specific scheduled job
 func (s *Server) getSchedule(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idStr := vars["id"]
@@ -169,22 +179,22 @@ func (s *Server) getSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	provision, err := s.db.GetProvisionByID(id)
+	job, err := s.db.GetJobByID(id)
 	if err != nil {
-		log.Errorf("Failed to get provision: %v", err)
+		log.Errorf("Failed to get job: %v", err)
 		respondError(w, http.StatusInternalServerError, "Failed to get schedule")
 		return
 	}
 
-	if provision == nil {
+	if job == nil {
 		respondError(w, http.StatusNotFound, "Schedule not found")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, provision)
+	respondJSON(w, http.StatusOK, job)
 }
 
-// cancelSchedule cancels a scheduled provision
+// cancelSchedule cancels a scheduled job
 func (s *Server) cancelSchedule(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idStr := vars["id"]
@@ -195,8 +205,8 @@ func (s *Server) cancelSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.db.CancelProvision(id); err != nil {
-		log.Errorf("Failed to cancel provision: %v", err)
+	if err := s.db.CancelJob(id); err != nil {
+		log.Errorf("Failed to cancel job: %v", err)
 		respondError(w, http.StatusInternalServerError, "Failed to cancel schedule")
 		return
 	}
@@ -204,18 +214,18 @@ func (s *Server) cancelSchedule(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Schedule cancelled successfully"})
 }
 
-// executeSchedule triggers immediate execution of a scheduled provision
+// executeSchedule triggers immediate execution of a scheduled job
 func (s *Server) executeSchedule(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 
 	if err := s.scheduler.ExecuteImmediately(idStr); err != nil {
-		log.Errorf("Failed to execute provision: %v", err)
+		log.Errorf("Failed to execute job: %v", err)
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"message": "Provision execution started"})
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Job execution started"})
 }
 
 // healthCheck returns the health status
@@ -233,7 +243,7 @@ func (s *Server) healthCheck(w http.ResponseWriter, r *http.Request) {
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteStatus(status)
+	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
 }
 

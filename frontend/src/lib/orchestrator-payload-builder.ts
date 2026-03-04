@@ -15,6 +15,8 @@ export interface OrchestratorPayload {
     microsoft365: boolean;
     jira: boolean;
     zoom: boolean;
+    github: boolean;
+    hubspot: boolean;
   };
   googleWorkspace?: {
     organizationalUnit: string;
@@ -27,6 +29,13 @@ export interface OrchestratorPayload {
   jira?: {
     products: string[];
     groups: string[];
+  };
+  github?: {
+    role: string;
+    teams: string[];
+  };
+  hubspot?: {
+    seatType: string;
   };
 }
 
@@ -48,6 +57,8 @@ export function buildOrchestratorPayload(formData: {
     microsoft: boolean;
     jira?: boolean;
     zoom?: boolean;
+    github?: boolean;
+    hubspot?: boolean;
     googleConfig?: {
       primaryOrgUnit: string;
       licenseSku?: string;
@@ -64,6 +75,13 @@ export function buildOrchestratorPayload(formData: {
       products: string[];
       groups: string[];
     };
+    githubConfig?: {
+      role: 'member' | 'admin';
+      teams: string[];
+    };
+    hubspotConfig?: {
+      seatType: 'core' | 'sales' | 'service' | 'marketing';
+    };
   };
 }): OrchestratorPayload {
   const payload: OrchestratorPayload = {
@@ -77,6 +95,8 @@ export function buildOrchestratorPayload(formData: {
       microsoft365: formData.applications.microsoft,
       jira: formData.applications.jira || false,
       zoom: formData.applications.zoom || false,
+      github: formData.applications.github || false,
+      hubspot: formData.applications.hubspot || false,
     },
   };
 
@@ -104,6 +124,21 @@ export function buildOrchestratorPayload(formData: {
     };
   }
 
+  // Add GitHub config if enabled
+  if (formData.applications.github && formData.applications.githubConfig) {
+    payload.github = {
+      role: formData.applications.githubConfig.role || 'member',
+      teams: formData.applications.githubConfig.teams || [],
+    };
+  }
+
+  // Add HubSpot config if enabled
+  if (formData.applications.hubspot && formData.applications.hubspotConfig) {
+    payload.hubspot = {
+      seatType: formData.applications.hubspotConfig.seatType || 'core',
+    };
+  }
+
   return payload;
 }
 
@@ -128,7 +163,7 @@ export function validateOrchestratorPayload(payload: OrchestratorPayload): {
   }
 
   // At least one app must be selected
-  if (!payload.selectedApps.googleWorkspace && !payload.selectedApps.microsoft365 && !payload.selectedApps.jira && !payload.selectedApps.zoom) {
+  if (!payload.selectedApps.googleWorkspace && !payload.selectedApps.microsoft365 && !payload.selectedApps.jira && !payload.selectedApps.zoom && !payload.selectedApps.github && !payload.selectedApps.hubspot) {
     errors.push('At least one application must be selected');
   }
 

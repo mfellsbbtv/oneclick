@@ -18,6 +18,12 @@ provisioning:
   retry_attempts: 3
   retry_delay: 60  # 1 minute
 
+termination:
+  api_url: "http://localhost:3000/api/terminate-n8n"
+  timeout: 300
+  retry_attempts: 3
+  retry_delay: 60
+
 logging:
   level: info
   format: text  # text or json

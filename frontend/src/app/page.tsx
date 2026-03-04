@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowRight, UserPlus, UserMinus, Shield, Zap } from 'lucide-react'
+import { ArrowRight, UserPlus, UserMinus, Shield, Zap, Clock } from 'lucide-react'
 
 export default function HomePage() {
   return (
@@ -16,7 +16,7 @@ export default function HomePage() {
         </p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-3 gap-6">
         <Card className="hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-green-300">
           <Link href="/quick-provision">
             <CardHeader>
@@ -57,6 +57,25 @@ export default function HomePage() {
             </CardContent>
           </Link>
         </Card>
+
+        <Card className="hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-blue-300">
+          <Link href="/schedules">
+            <CardHeader>
+              <Clock className="h-8 w-8 text-blue-600" />
+              <CardTitle>Scheduled Jobs</CardTitle>
+              <CardDescription>
+                View and manage scheduled provisioning and termination jobs
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-sm text-gray-600 space-y-1">
+                <li>View pending scheduled jobs</li>
+                <li>Cancel or execute jobs immediately</li>
+                <li>Track job execution status</li>
+              </ul>
+            </CardContent>
+          </Link>
+        </Card>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -92,6 +111,12 @@ export default function HomePage() {
           <Button size="lg" variant="destructive" className="text-lg px-8 py-6">
             <UserMinus className="mr-2 h-5 w-5" />
             Terminate User
+          </Button>
+        </Link>
+        <Link href="/schedules">
+          <Button size="lg" variant="outline" className="text-lg px-8 py-6 border-blue-300 text-blue-600 hover:bg-blue-50">
+            <Clock className="mr-2 h-5 w-5" />
+            Scheduled Jobs
           </Button>
         </Link>
       </div>

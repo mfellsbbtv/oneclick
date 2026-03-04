@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { AlertCircle, CheckCircle2, Circle, Loader2, UserMinus, Calendar, Mail, Shield } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Circle, Loader2, UserMinus, Calendar, Mail, Shield, Clock } from 'lucide-react';
+import { SchedulePicker } from '@/components/SchedulePicker';
+import { ScheduleConfig } from '@/lib/scheduler-types';
 
 // Available domains for the organization
 const AVAILABLE_DOMAINS = [
@@ -24,11 +26,15 @@ interface TerminationData {
   managerUsername: string;
   managerDomain: string;
   terminationDate: string;
+  githubUsername: string;
+  hubspotReassignEmail: string;
   selectedApps: {
     googleWorkspace: boolean;
     microsoft365: boolean;
     jira: boolean;
     zoom: boolean;
+    github: boolean;
+    hubspot: boolean;
   };
 }
 
@@ -71,6 +77,10 @@ export function TerminationForm() {
   const [result, setResult] = useState<TerminationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmText, setConfirmText] = useState('');
+  const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>({
+    isScheduled: false,
+    scheduleTime: null,
+  });
 
   const [terminationData, setTerminationData] = useState<TerminationData>({
     userUsername: '',
@@ -78,11 +88,15 @@ export function TerminationForm() {
     managerUsername: '',
     managerDomain: '@rhei.com',
     terminationDate: new Date().toISOString().split('T')[0],
+    githubUsername: '',
+    hubspotReassignEmail: '',
     selectedApps: {
       googleWorkspace: true,
       microsoft365: false,
       jira: false,
       zoom: false,
+      github: false,
+      hubspot: false,
     },
   });
 
@@ -107,27 +121,54 @@ export function TerminationForm() {
     setError(null);
     setResult(null);
 
+    const terminationPayload = {
+      userEmail,
+      managerEmail,
+      terminationDate: terminationData.terminationDate,
+      selectedApps: terminationData.selectedApps,
+      githubUsername: terminationData.githubUsername,
+      hubspotReassignEmail: terminationData.hubspotReassignEmail,
+    };
+
     try {
-      const response = await fetch('/api/terminate-n8n', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userEmail,
-          managerEmail,
-          terminationDate: terminationData.terminationDate,
-          selectedApps: terminationData.selectedApps,
-        }),
-      });
+      if (scheduleConfig.isScheduled && scheduleConfig.scheduleTime) {
+        // Schedule for later
+        const response = await fetch('/api/scheduler/schedule', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            job_type: 'terminate',
+            payload: terminationPayload,
+            schedule_time: scheduleConfig.scheduleTime,
+            tags: ['scheduled', 'termination'],
+          }),
+        });
 
-      const data = await response.json();
+        if (!response.ok) {
+          throw new Error('Scheduling failed');
+        }
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Termination failed');
+        window.location.href = '/schedules';
+      } else {
+        // Immediate execution — existing flow unchanged
+        const response = await fetch('/api/terminate-n8n', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(terminationPayload),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Termination failed');
+        }
+
+        setResult(data);
       }
-
-      setResult(data);
     } catch (err) {
       console.error('Termination error:', err);
       setError(err instanceof Error ? err.message : 'Unknown error occurred');
@@ -143,11 +184,15 @@ export function TerminationForm() {
       managerUsername: '',
       managerDomain: '@rhei.com',
       terminationDate: new Date().toISOString().split('T')[0],
+      githubUsername: '',
+      hubspotReassignEmail: '',
       selectedApps: {
         googleWorkspace: true,
         microsoft365: false,
         jira: false,
         zoom: false,
+        github: false,
+        hubspot: false,
       },
     });
     setConfirmText('');
@@ -454,7 +499,88 @@ export function TerminationForm() {
             <span className="text-sm text-gray-500">Zoom account</span>
           </div>
 
-          {!terminationData.selectedApps.googleWorkspace && !terminationData.selectedApps.microsoft365 && !terminationData.selectedApps.jira && !terminationData.selectedApps.zoom && (
+          {/* GitHub */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <Switch
+                  id="github"
+                  checked={terminationData.selectedApps.github}
+                  onCheckedChange={(checked) => setTerminationData(prev => ({
+                    ...prev,
+                    selectedApps: { ...prev.selectedApps, github: checked }
+                  }))}
+                />
+                <Label htmlFor="github" className="text-base">
+                  GitHub
+                </Label>
+              </div>
+              <span className="text-sm text-gray-500">rhei-corp organization</span>
+            </div>
+
+            {terminationData.selectedApps.github && (
+              <div className="ml-8 p-3 bg-white border rounded-lg">
+                <Label htmlFor="githubUsername">GitHub Username *</Label>
+                <Input
+                  id="githubUsername"
+                  type="text"
+                  placeholder="e.g., johndoe"
+                  value={terminationData.githubUsername}
+                  onChange={(e) => setTerminationData(prev => ({
+                    ...prev,
+                    githubUsername: e.target.value.trim()
+                  }))}
+                  className="mt-1"
+                  required={terminationData.selectedApps.github}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  The user&apos;s GitHub username (not email). This is required to remove them from the organization.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* HubSpot */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <Switch
+                  id="hubspot"
+                  checked={terminationData.selectedApps.hubspot}
+                  onCheckedChange={(checked) => setTerminationData(prev => ({
+                    ...prev,
+                    selectedApps: { ...prev.selectedApps, hubspot: checked }
+                  }))}
+                />
+                <Label htmlFor="hubspot" className="text-base">
+                  HubSpot
+                </Label>
+              </div>
+              <span className="text-sm text-gray-500">CRM account</span>
+            </div>
+
+            {terminationData.selectedApps.hubspot && (
+              <div className="ml-8 p-3 bg-white border rounded-lg">
+                <Label htmlFor="hubspotReassignEmail">Reassign Records To (Email)</Label>
+                <Input
+                  id="hubspotReassignEmail"
+                  type="email"
+                  placeholder="e.g., manager@rhei.com"
+                  value={terminationData.hubspotReassignEmail}
+                  onChange={(e) => setTerminationData(prev => ({
+                    ...prev,
+                    hubspotReassignEmail: e.target.value.trim()
+                  }))}
+                  className="mt-1"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Contacts and deals owned by this user will be reassigned to this email. Leave blank to skip reassignment.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {!terminationData.selectedApps.googleWorkspace && !terminationData.selectedApps.microsoft365 && !terminationData.selectedApps.jira && !terminationData.selectedApps.zoom && !terminationData.selectedApps.github && !terminationData.selectedApps.hubspot && (
             <p className="text-sm text-amber-600 flex items-center gap-2">
               <AlertCircle className="h-4 w-4" />
               At least one application must be selected
@@ -462,6 +588,8 @@ export function TerminationForm() {
           )}
         </CardContent>
       </Card>
+
+      <SchedulePicker onScheduleChange={setScheduleConfig} />
 
       {/* Confirmation Card */}
       <Card className="border-red-200">
@@ -494,17 +622,22 @@ export function TerminationForm() {
         <Button
           type="submit"
           variant="destructive"
-          disabled={isLoading || !isFormValid || (!terminationData.selectedApps.googleWorkspace && !terminationData.selectedApps.microsoft365 && !terminationData.selectedApps.jira && !terminationData.selectedApps.zoom)}
+          disabled={isLoading || !isFormValid || (!terminationData.selectedApps.googleWorkspace && !terminationData.selectedApps.microsoft365 && !terminationData.selectedApps.jira && !terminationData.selectedApps.zoom && !terminationData.selectedApps.github && !terminationData.selectedApps.hubspot) || (terminationData.selectedApps.github && !terminationData.githubUsername)}
         >
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Terminating...
+              {scheduleConfig.isScheduled ? 'Scheduling...' : 'Terminating...'}
+            </>
+          ) : scheduleConfig.isScheduled ? (
+            <>
+              <Clock className="mr-2 h-4 w-4" />
+              Schedule Termination
             </>
           ) : (
             <>
               <UserMinus className="mr-2 h-4 w-4" />
-              Terminate User
+              Terminate Now
             </>
           )}
         </Button>

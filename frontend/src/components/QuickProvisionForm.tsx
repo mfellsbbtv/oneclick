@@ -10,7 +10,9 @@ import { MICROSOFT_LICENSES, LICENSE_RECOMMENDATIONS, MICROSOFT_GROUPS, getLicen
 import { GOOGLE_GROUPS, GOOGLE_GROUP_RECOMMENDATIONS } from '@/lib/google-config';
 import { GoogleGroupsSelector } from '@/components/GoogleGroupsSelector';
 import { MicrosoftGroupsSelector } from '@/components/MicrosoftGroupsSelector';
-import { CheckCircle2, Circle, AlertCircle, Loader2, Users, Mail, Building, Briefcase, AlertTriangle, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Circle, AlertCircle, Loader2, Users, Mail, Building, Briefcase, AlertTriangle, RefreshCw, Clock } from 'lucide-react';
+import { SchedulePicker } from '@/components/SchedulePicker';
+import { ScheduleConfig } from '@/lib/scheduler-types';
 
 interface QuickProvisionFormProps {
   onSubmit?: (data: ProvisionData) => void;
@@ -31,6 +33,8 @@ interface ProvisionData {
     microsoft: boolean;
     jira: boolean;
     zoom: boolean;
+    github: boolean;
+    hubspot: boolean;
     googleConfig?: {
       primaryOrgUnit: string;
       licenseSku: string;
@@ -48,11 +52,22 @@ interface ProvisionData {
       products: string[];
       groups: string[];
     };
+    githubConfig?: {
+      role: 'member' | 'admin';
+      teams: string[];
+    };
+    hubspotConfig?: {
+      seatType: 'core' | 'sales' | 'service' | 'marketing';
+    };
   };
 }
 
 export function QuickProvisionForm({ onSubmit }: QuickProvisionFormProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>({
+    isScheduled: false,
+    scheduleTime: null,
+  });
   const [microsoftLicenses, setMicrosoftLicenses] = useState<MicrosoftLicense[]>(MICROSOFT_LICENSES);
   const [isRefreshingLicenses, setIsRefreshingLicenses] = useState(false);
   const [lastLicenseRefresh, setLastLicenseRefresh] = useState<string | null>(null);
@@ -71,6 +86,8 @@ export function QuickProvisionForm({ onSubmit }: QuickProvisionFormProps) {
       microsoft: true,
       jira: false,
       zoom: false,
+      github: false,
+      hubspot: false,
       googleConfig: {
         primaryOrgUnit: '/',
         licenseSku: '1010020026', // Enterprise Standard (fixed)
@@ -86,6 +103,13 @@ export function QuickProvisionForm({ onSubmit }: QuickProvisionFormProps) {
       jiraConfig: {
         products: ['jira-software', 'confluence'],
         groups: ['jira-users', 'confluence-users'],
+      },
+      githubConfig: {
+        role: 'member',
+        teams: [],
+      },
+      hubspotConfig: {
+        seatType: 'core',
       },
     },
   });
@@ -192,50 +216,74 @@ export function QuickProvisionForm({ onSubmit }: QuickProvisionFormProps) {
     e.preventDefault();
     setIsLoading(true);
 
-    try {
-      // Call n8n webhook endpoint
-      const response = await fetch('/api/provision-n8n', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...provisionData,
-          applications: {
-            ...provisionData.applications,
-            // Only include enabled applications
-            ...(provisionData.applications.google && {
-              'google-workspace': provisionData.applications.googleConfig,
-            }),
-            ...(provisionData.applications.microsoft && {
-              'microsoft-365': provisionData.applications.microsoftConfig,
-            }),
-            // Note: jira and jiraConfig are already in provisionData.applications
-            // The payload builder handles them correctly
-          },
+    const formPayload = {
+      ...provisionData,
+      applications: {
+        ...provisionData.applications,
+        // Only include enabled applications
+        ...(provisionData.applications.google && {
+          'google-workspace': provisionData.applications.googleConfig,
         }),
-      });
+        ...(provisionData.applications.microsoft && {
+          'microsoft-365': provisionData.applications.microsoftConfig,
+        }),
+        // Note: jira and jiraConfig are already in provisionData.applications
+        // The payload builder handles them correctly
+      },
+    };
 
-      if (!response.ok) {
-        throw new Error('Provisioning failed');
+    try {
+      if (scheduleConfig.isScheduled && scheduleConfig.scheduleTime) {
+        // Schedule for later
+        const response = await fetch('/api/scheduler/schedule', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            job_type: 'provision',
+            payload: formPayload,
+            schedule_time: scheduleConfig.scheduleTime,
+            tags: ['scheduled', 'provision'],
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Scheduling failed');
+        }
+
+        window.location.href = '/schedules';
+      } else {
+        // Immediate execution — existing flow unchanged
+        const response = await fetch('/api/provision-n8n', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formPayload),
+        });
+
+        if (!response.ok) {
+          throw new Error('Provisioning failed');
+        }
+
+        const result = await response.json();
+
+        // Save provisioning data and results to localStorage for success page
+        const provisioningData = {
+          request: provisionData,
+          response: result,
+          timestamp: new Date().toISOString(),
+        };
+        localStorage.setItem('lastProvisioning', JSON.stringify(provisioningData));
+
+        if (onSubmit) {
+          onSubmit(provisionData);
+        }
+
+        // Redirect to success page
+        window.location.href = '/provision/success';
       }
-
-      const result = await response.json();
-
-      // Save provisioning data and results to localStorage for success page
-      const provisioningData = {
-        request: provisionData,
-        response: result,
-        timestamp: new Date().toISOString(),
-      };
-      localStorage.setItem('lastProvisioning', JSON.stringify(provisioningData));
-
-      if (onSubmit) {
-        onSubmit(provisionData);
-      }
-
-      // Redirect to success page
-      window.location.href = '/provision/success';
     } catch (error) {
       console.error('Provisioning error:', error);
       alert('Provisioning failed. Please try again.');
@@ -766,19 +814,180 @@ export function QuickProvisionForm({ onSubmit }: QuickProvisionFormProps) {
               </div>
             )}
           </div>
+
+          {/* GitHub */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <Switch
+                  id="github"
+                  checked={provisionData.applications.github}
+                  onCheckedChange={(checked) => setProvisionData(prev => ({
+                    ...prev,
+                    applications: { ...prev.applications, github: checked }
+                  }))}
+                />
+                <Label htmlFor="github" className="text-base font-semibold">
+                  ⬛ GitHub
+                </Label>
+              </div>
+            </div>
+
+            {provisionData.applications.github && (
+              <div className="ml-8 p-3 bg-gray-50 rounded-lg space-y-4">
+                <div className="text-xs text-gray-600 mb-2">
+                  <span className="font-semibold">Organization:</span> rhei-corp
+                </div>
+
+                {/* Role Selection */}
+                <div>
+                  <Label className="text-sm font-medium">Role</Label>
+                  <p className="text-xs text-gray-500 mb-2">Select the user&apos;s role in the organization</p>
+                  <div className="space-y-1">
+                    {[
+                      { id: 'member', name: 'Member', description: 'Regular organization member' },
+                      { id: 'admin', name: 'Admin', description: 'Organization administrator' },
+                    ].map(role => {
+                      const isSelected = provisionData.applications.githubConfig?.role === role.id;
+                      return (
+                        <label
+                          key={role.id}
+                          className={`flex items-center justify-between p-2 rounded border transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-50 border-blue-300'
+                              : 'bg-white border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center">
+                            <input
+                              type="radio"
+                              name="githubRole"
+                              checked={isSelected}
+                              onChange={() => {
+                                setProvisionData(prev => ({
+                                  ...prev,
+                                  applications: {
+                                    ...prev.applications,
+                                    githubConfig: {
+                                      ...prev.applications.githubConfig!,
+                                      role: role.id as 'member' | 'admin',
+                                    },
+                                  },
+                                }));
+                              }}
+                              className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+                            />
+                            <span className="text-sm font-medium">{role.name}</span>
+                          </div>
+                          <span className="text-xs text-gray-500">{role.description}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="text-xs text-gray-500">
+                  <span className="font-semibold">Note:</span> User will receive a GitHub organization invitation email
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* HubSpot */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <Switch
+                  id="hubspot"
+                  checked={provisionData.applications.hubspot}
+                  onCheckedChange={(checked) => setProvisionData(prev => ({
+                    ...prev,
+                    applications: { ...prev.applications, hubspot: checked }
+                  }))}
+                />
+                <Label htmlFor="hubspot" className="text-base font-semibold">
+                  🟠 HubSpot
+                </Label>
+              </div>
+            </div>
+
+            {provisionData.applications.hubspot && (
+              <div className="ml-8 p-3 bg-gray-50 rounded-lg space-y-4">
+                {/* Seat Type Selection */}
+                <div>
+                  <Label className="text-sm font-medium">Seat Type</Label>
+                  <p className="text-xs text-gray-500 mb-2">Select the HubSpot seat type for this user</p>
+                  <div className="space-y-1">
+                    {[
+                      { id: 'core', name: 'Core Seat', description: 'Basic CRM access' },
+                      { id: 'sales', name: 'Sales Seat', description: 'Sales Hub features' },
+                      { id: 'service', name: 'Service Seat', description: 'Service Hub features' },
+                      { id: 'marketing', name: 'Marketing Seat', description: 'Marketing Hub features' },
+                    ].map(seat => {
+                      const isSelected = provisionData.applications.hubspotConfig?.seatType === seat.id;
+                      return (
+                        <label
+                          key={seat.id}
+                          className={`flex items-center justify-between p-2 rounded border transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-50 border-blue-300'
+                              : 'bg-white border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center">
+                            <input
+                              type="radio"
+                              name="hubspotSeatType"
+                              checked={isSelected}
+                              onChange={() => {
+                                setProvisionData(prev => ({
+                                  ...prev,
+                                  applications: {
+                                    ...prev.applications,
+                                    hubspotConfig: {
+                                      ...prev.applications.hubspotConfig!,
+                                      seatType: seat.id as 'core' | 'sales' | 'service' | 'marketing',
+                                    },
+                                  },
+                                }));
+                              }}
+                              className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+                            />
+                            <span className="text-sm font-medium">{seat.name}</span>
+                          </div>
+                          <span className="text-xs text-gray-500">{seat.description}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="text-xs text-gray-500">
+                  <span className="font-semibold">Note:</span> User will receive a HubSpot welcome email to set up their account
+                </div>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
+
+      <SchedulePicker onScheduleChange={setScheduleConfig} />
 
       {/* Submit Button */}
       <div className="flex justify-end space-x-4">
         <Button type="button" variant="outline" disabled={isLoading}>
           Cancel
         </Button>
-        <Button type="submit" disabled={isLoading || (!provisionData.applications.google && !provisionData.applications.microsoft && !provisionData.applications.jira && !provisionData.applications.zoom)}>
+        <Button type="submit" disabled={isLoading || (!provisionData.applications.google && !provisionData.applications.microsoft && !provisionData.applications.jira && !provisionData.applications.zoom && !provisionData.applications.github && !provisionData.applications.hubspot)}>
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Provisioning...
+              {scheduleConfig.isScheduled ? 'Scheduling...' : 'Provisioning...'}
+            </>
+          ) : scheduleConfig.isScheduled ? (
+            <>
+              <Clock className="mr-2 h-4 w-4" />
+              Schedule Provisioning
             </>
           ) : (
             <>

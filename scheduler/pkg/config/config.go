@@ -11,6 +11,7 @@ type Config struct {
 	Database     DatabaseConfig     `yaml:"database"`
 	Scheduler    SchedulerConfig    `yaml:"scheduler"`
 	Provisioning ProvisioningConfig `yaml:"provisioning"`
+	Termination  TerminationConfig  `yaml:"termination"`
 	Logging      LoggingConfig      `yaml:"logging"`
 	Server       ServerConfig       `yaml:"server"`
 }
@@ -32,6 +33,13 @@ type SchedulerConfig struct {
 }
 
 type ProvisioningConfig struct {
+	APIURL        string `yaml:"api_url"`
+	Timeout       int    `yaml:"timeout"` // seconds
+	RetryAttempts int    `yaml:"retry_attempts"`
+	RetryDelay    int    `yaml:"retry_delay"` // seconds
+}
+
+type TerminationConfig struct {
 	APIURL        string `yaml:"api_url"`
 	Timeout       int    `yaml:"timeout"` // seconds
 	RetryAttempts int    `yaml:"retry_attempts"`
@@ -93,6 +101,9 @@ func overrideWithEnv(cfg *Config) {
 	if apiURL := os.Getenv("PROVISIONING_API_URL"); apiURL != "" {
 		cfg.Provisioning.APIURL = apiURL
 	}
+	if apiURL := os.Getenv("TERMINATION_API_URL"); apiURL != "" {
+		cfg.Termination.APIURL = apiURL
+	}
 	if interval := os.Getenv("SCHEDULER_INTERVAL"); interval != "" {
 		cfg.Scheduler.CheckInterval = interval
 	}
@@ -114,6 +125,9 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Provisioning.APIURL == "" {
 		return fmt.Errorf("provisioning API URL is required")
+	}
+	if cfg.Termination.APIURL == "" {
+		return fmt.Errorf("termination API URL is required")
 	}
 	if cfg.Scheduler.CheckInterval == "" {
 		return fmt.Errorf("scheduler check interval is required")

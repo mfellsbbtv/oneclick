@@ -3,6 +3,7 @@ import { logTerminate } from '@/lib/logger';
 
 // N8N terminate orchestrator webhook URL
 const N8N_TERMINATE_WEBHOOK = process.env.N8N_TERMINATE_WEBHOOK || 'https://rhei.app.n8n.cloud/webhook/terminate-orchestrator';
+const N8N_WEBHOOK_API_KEY = process.env.N8N_WEBHOOK_API_KEY || '';
 
 interface TerminationPayload {
   userEmail: string;
@@ -82,7 +83,10 @@ export async function POST(request: NextRequest) {
     // Send to n8n terminate orchestrator webhook
     const orchestratorResponse = await fetch(N8N_TERMINATE_WEBHOOK, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(N8N_WEBHOOK_API_KEY && { 'x-api-key': N8N_WEBHOOK_API_KEY }),
+      },
       body: JSON.stringify(terminationPayload),
     });
 

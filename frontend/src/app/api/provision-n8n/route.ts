@@ -4,6 +4,7 @@ import { logProvision } from '@/lib/logger';
 
 // n8n orchestrator webhook URL
 const N8N_ORCHESTRATOR_WEBHOOK = process.env.N8N_ORCHESTRATOR_WEBHOOK || process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL;
+const N8N_WEBHOOK_API_KEY = process.env.N8N_WEBHOOK_API_KEY || '';
 
 export async function POST(request: NextRequest) {
   try {
@@ -42,7 +43,10 @@ export async function POST(request: NextRequest) {
     // Send to n8n orchestrator webhook
     const orchestratorResponse = await fetch(N8N_ORCHESTRATOR_WEBHOOK!, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(N8N_WEBHOOK_API_KEY && { 'x-api-key': N8N_WEBHOOK_API_KEY }),
+      },
       body: JSON.stringify(orchestratorPayload),
     });
 

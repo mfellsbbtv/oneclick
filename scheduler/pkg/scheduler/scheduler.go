@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/mfellsbbtv/oneclick-scheduler/pkg/config"
 	"github.com/mfellsbbtv/oneclick-scheduler/pkg/database"
 	"github.com/robfig/cron/v3"
@@ -35,7 +36,6 @@ func New(db *database.DB, cfg *config.Config) *Scheduler {
 
 // Start begins the scheduler
 func (s *Scheduler) Start() error {
-	// Add cron job to check for pending provisions
 	_, err := s.cron.AddFunc(s.cfg.Scheduler.CheckInterval, s.checkAndExecute)
 	if err != nil {
 		return fmt.Errorf("failed to add cron job: %w", err)
@@ -53,27 +53,132 @@ func (s *Scheduler) Stop() {
 	log.Info("Scheduler stopped")
 }
 
-// checkAndExecute checks for pending provisions and executes them
+// checkAndExecute checks for pending jobs and executes them
 func (s *Scheduler) checkAndExecute() {
-	provisions, err := s.db.GetPendingProvisions()
+	jobs, err := s.db.GetPendingJobs()
 	if err != nil {
-		log.Errorf("Failed to get pending provisions: %v", err)
+		log.Errorf("Failed to get pending jobs: %v", err)
 		return
 	}
 
-	if len(provisions) == 0 {
-		log.Debug("No pending provisions to execute")
+	if len(jobs) == 0 {
+		log.Debug("No pending jobs to execute")
 		return
 	}
 
-	log.Infof("Found %d pending provisions to execute", len(provisions))
+	log.Infof("Found %d pending jobs to execute", len(jobs))
 
-	for _, provision := range provisions {
-		go s.executeProvision(provision)
+	for _, job := range jobs {
+		go s.executeJob(job)
 	}
 }
 
-// executeProvision executes a single provisioning job
+// executeJob executes a generic scheduled job, routing by job type.
+func (s *Scheduler) executeJob(job database.ScheduledJob) {
+	logger := log.WithFields(log.Fields{
+		"id":       job.ID,
+		"job_type": job.JobType,
+	})
+
+	logger.Info("Starting job execution")
+
+	// Determine target URL based on job type
+	var targetURL string
+	switch job.JobType {
+	case database.JobTypeProvision:
+		targetURL = s.cfg.Provisioning.APIURL
+	case database.JobTypeTerminate:
+		targetURL = s.cfg.Termination.APIURL
+	default:
+		errMsg := fmt.Sprintf("unknown job type: %s", job.JobType)
+		logger.Error(errMsg)
+		if err := s.db.UpdateJobStatus(job.ID, database.StatusFailed, &errMsg); err != nil {
+			logger.Errorf("Failed to update job status to failed: %v", err)
+		}
+		return
+	}
+
+	// Update status to executing
+	if err := s.db.UpdateJobStatus(job.ID, database.StatusExecuting, nil); err != nil {
+		logger.Errorf("Failed to update status to executing: %v", err)
+		return
+	}
+
+	// POST the raw JSON payload to the target URL
+	resp, err := s.client.Post(
+		targetURL,
+		"application/json",
+		bytes.NewReader([]byte(job.Payload)),
+	)
+	if err != nil {
+		logger.Errorf("Failed to call %s API: %v", job.JobType, err)
+		s.handleJobFailure(job, fmt.Sprintf("API call failed: %v", err))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errMsg := fmt.Sprintf("API returned status %d", resp.StatusCode)
+		logger.Error(errMsg)
+		s.handleJobFailure(job, errMsg)
+		return
+	}
+
+	// Success
+	logger.Info("Job completed successfully")
+	if err := s.db.UpdateJobStatus(job.ID, database.StatusCompleted, nil); err != nil {
+		logger.Errorf("Failed to update status to completed: %v", err)
+	}
+}
+
+// handleJobFailure handles a failed job with retry logic.
+func (s *Scheduler) handleJobFailure(job database.ScheduledJob, errorMsg string) {
+	logger := log.WithField("id", job.ID)
+
+	if err := s.db.IncrementJobRetryCount(job.ID); err != nil {
+		logger.Errorf("Failed to increment retry count: %v", err)
+	}
+
+	if job.RetryCount < s.cfg.Scheduler.MaxRetries {
+		logger.Infof("Scheduling retry %d/%d in %d seconds",
+			job.RetryCount+1, s.cfg.Scheduler.MaxRetries, s.cfg.Scheduler.RetryDelay)
+
+		if err := s.db.UpdateJobStatus(job.ID, database.StatusPending, &errorMsg); err != nil {
+			logger.Errorf("Failed to reset status for retry: %v", err)
+		}
+	} else {
+		logger.Error("Max retries reached, marking as failed")
+		if err := s.db.UpdateJobStatus(job.ID, database.StatusFailed, &errorMsg); err != nil {
+			logger.Errorf("Failed to update status to failed: %v", err)
+		}
+	}
+}
+
+// ExecuteImmediately executes a job immediately, bypassing the schedule.
+func (s *Scheduler) ExecuteImmediately(jobID string) error {
+	id, err := uuid.Parse(jobID)
+	if err != nil {
+		return fmt.Errorf("invalid job ID: %w", err)
+	}
+
+	job, err := s.db.GetJobByID(id)
+	if err != nil {
+		return fmt.Errorf("failed to get job: %w", err)
+	}
+
+	if job == nil {
+		return fmt.Errorf("job not found")
+	}
+
+	if job.Status != database.StatusPending {
+		return fmt.Errorf("job is not in pending status")
+	}
+
+	go s.executeJob(*job)
+	return nil
+}
+
+// executeProvision is kept for backward compatibility.
 func (s *Scheduler) executeProvision(provision database.ScheduledProvision) {
 	logger := log.WithFields(log.Fields{
 		"id":       provision.ID,
@@ -81,15 +186,13 @@ func (s *Scheduler) executeProvision(provision database.ScheduledProvision) {
 		"email":    provision.EmployeeData.WorkEmail,
 	})
 
-	logger.Info("Starting provision execution")
+	logger.Info("Starting provision execution (legacy path)")
 
-	// Update status to executing
 	if err := s.db.UpdateProvisionStatus(provision.ID, database.StatusExecuting, nil); err != nil {
 		logger.Errorf("Failed to update status to executing: %v", err)
 		return
 	}
 
-	// Prepare request payload
 	payload := map[string]interface{}{
 		"employee":     provision.EmployeeData,
 		"applications": provision.Applications,
@@ -97,19 +200,17 @@ func (s *Scheduler) executeProvision(provision database.ScheduledProvision) {
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
-		logger.Errorf("Failed to marshal payload: %v", err)
 		errMsg := fmt.Sprintf("Failed to marshal payload: %v", err)
-		s.db.UpdateProvisionStatus(provision.ID, database.StatusFailed, &errMsg)
+		logger.Error(errMsg)
+		s.db.UpdateProvisionStatus(provision.ID, database.StatusFailed, &errMsg) //nolint:errcheck
 		return
 	}
 
-	// Make API request
 	resp, err := s.client.Post(
 		s.cfg.Provisioning.APIURL,
 		"application/json",
 		bytes.NewBuffer(jsonData),
 	)
-
 	if err != nil {
 		logger.Errorf("Failed to call provisioning API: %v", err)
 		s.handleProvisionFailure(provision, fmt.Sprintf("API call failed: %v", err))
@@ -117,73 +218,38 @@ func (s *Scheduler) executeProvision(provision database.ScheduledProvision) {
 	}
 	defer resp.Body.Close()
 
-	// Check response
 	if resp.StatusCode != http.StatusOK {
-		var responseBody map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&responseBody)
-
-		errMsg := fmt.Sprintf("API returned status %d: %v", resp.StatusCode, responseBody)
+		errMsg := fmt.Sprintf("API returned status %d", resp.StatusCode)
 		logger.Error(errMsg)
 		s.handleProvisionFailure(provision, errMsg)
 		return
 	}
 
-	// Success
 	logger.Info("Provision completed successfully")
 	if err := s.db.UpdateProvisionStatus(provision.ID, database.StatusCompleted, nil); err != nil {
 		logger.Errorf("Failed to update status to completed: %v", err)
 	}
 }
 
-// handleProvisionFailure handles a failed provision with retry logic
+// handleProvisionFailure is kept for backward compatibility.
 func (s *Scheduler) handleProvisionFailure(provision database.ScheduledProvision, errorMsg string) {
 	logger := log.WithField("id", provision.ID)
 
-	// Increment retry count
 	if err := s.db.IncrementRetryCount(provision.ID); err != nil {
 		logger.Errorf("Failed to increment retry count: %v", err)
 	}
 
-	// Check if we should retry
 	if provision.RetryCount < s.cfg.Scheduler.MaxRetries {
 		logger.Infof("Scheduling retry %d/%d in %d seconds",
 			provision.RetryCount+1, s.cfg.Scheduler.MaxRetries, s.cfg.Scheduler.RetryDelay)
 
-		// Reset to pending for retry
 		if err := s.db.UpdateProvisionStatus(provision.ID, database.StatusPending, &errorMsg); err != nil {
 			logger.Errorf("Failed to reset status for retry: %v", err)
 		}
 	} else {
-		// Max retries reached
 		logger.Error("Max retries reached, marking as failed")
 		if err := s.db.UpdateProvisionStatus(provision.ID, database.StatusFailed, &errorMsg); err != nil {
 			logger.Errorf("Failed to update status to failed: %v", err)
 		}
 	}
-}
-
-// ExecuteImmediately executes a provision immediately, bypassing schedule
-func (s *Scheduler) ExecuteImmediately(provisionID string) error {
-	provision, err := s.db.GetProvisionByID(mustParseUUID(provisionID))
-	if err != nil {
-		return fmt.Errorf("failed to get provision: %w", err)
-	}
-
-	if provision == nil {
-		return fmt.Errorf("provision not found")
-	}
-
-	if provision.Status != database.StatusPending {
-		return fmt.Errorf("provision is not in pending status")
-	}
-
-	go s.executeProvision(*provision)
-	return nil
-}
-
-func mustParseUUID(s string) [16]byte {
-	var uuid [16]byte
-	fmt.Sscanf(s, "%x-%x-%x-%x-%x",
-		&uuid[0:4], &uuid[4:6], &uuid[6:8], &uuid[8:10], &uuid[10:16])
-	return uuid
 }
