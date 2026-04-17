@@ -87,7 +87,7 @@ export function SlackSummary({ formData }: SlackSummaryProps) {
             <div>
               <p className="font-medium text-blue-800">Slack Invitation Process</p>
               <p className="text-blue-700 text-xs mt-1">
-                User will receive an invitation email from Slack. They'll need to accept the invitation 
+                User will receive an invitation email from Slack. They&apos;ll need to accept the invitation
                 and set up their password to access the workspace.
               </p>
             </div>
@@ -100,7 +100,7 @@ export function SlackSummary({ formData }: SlackSummaryProps) {
             <br />
             1. User receives Slack invitation email
             <br />
-            2. User clicks "Join Workspace" in email
+            2. User clicks &quot;Join Workspace&quot; in email
             <br />
             3. User sets up their Slack password
             <br />

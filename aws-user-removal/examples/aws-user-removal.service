@@ -1,0 +1,41 @@
+[Unit]
+Description=AWS User Removal - Disable Access
+Documentation=file:///opt/aws-user-removal/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aws-user-removal
+Group=aws-user-removal
+
+# Set environment variables
+Environment="AWS_PROFILE=prod"
+Environment="ACCOUNTS=prod,staging,dev"
+Environment="USERNAME=john.doe"
+
+# The actual command - customize USERNAME and ACCOUNTS as needed
+ExecStart=/opt/aws-user-removal/aws-user-removal disable \
+    -u %E{USERNAME} \
+    -a %E{ACCOUNTS} \
+    --force
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aws-user-removal
+
+# Security
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/aws-user-removal
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

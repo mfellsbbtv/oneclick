@@ -105,7 +105,7 @@ export function GoogleWorkspaceSummary({ formData }: GoogleWorkspaceSummaryProps
                   <p className="font-medium text-green-800">Ready for immediate login!</p>
                   <p className="text-green-700 text-xs mt-1">
                     User can log in with the password shown above right after creation 
-                    (allow 10-15 minutes for Google's propagation).
+                    (allow 10-15 minutes for Google&apos;s propagation).
                   </p>
                 </div>
               </>

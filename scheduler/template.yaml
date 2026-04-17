@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  OneClick scheduled job executor.
+  An EventBridge rule fires this Lambda every minute; the Lambda calls the
+  Vercel /api/scheduler/run endpoint, which atomically claims and executes
+  any change_requests with status='scheduled' AND schedule_time <= NOW().
+
+Parameters:
+  VercelSchedulerURL:
+    Type: String
+    Description: >
+      Full HTTPS URL of the Vercel scheduler endpoint.
+      Example: https://your-app.vercel.app/api/scheduler/run
+  SchedulerAPIKey:
+    Type: String
+    NoEcho: true
+    Description: >
+      Shared secret sent in the x-scheduler-key header.
+      Must match the SCHEDULER_API_KEY environment variable set in Vercel.
+  FunctionName:
+    Type: String
+    Default: oneclick-scheduler
+    Description: Lambda function name
+
+Globals:
+  Function:
+    Runtime: provided.al2023
+    Architectures: [arm64]
+    Timeout: 30
+    MemorySize: 128
+    Environment:
+      Variables:
+        VERCEL_SCHEDULER_URL: !Ref VercelSchedulerURL
+        SCHEDULER_API_KEY: !Ref SchedulerAPIKey
+
+Resources:
+  SchedulerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      # SAM builds the Go binary using the Makefile target build-SchedulerFunction
+      CodeUri: cmd/lambda/
+      Handler: bootstrap
+      Description: Fires every minute and triggers the Vercel scheduler run endpoint
+      Events:
+        EveryMinute:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: "rate(1 minute)"
+            Description: "Invoke OneClick job executor every minute"
+            # Retry policy: don't retry on failure (next invocation is 1 min away)
+            RetryPolicy:
+              MaximumRetryAttempts: 0
+    Metadata:
+      # Tell SAM how to build the Go binary
+      BuildMethod: go1.x
+
+Outputs:
+  SchedulerFunctionArn:
+    Description: ARN of the deployed scheduler Lambda function
+    Value: !GetAtt SchedulerFunction.Arn
+  SchedulerFunctionName:
+    Description: Name of the deployed scheduler Lambda function
+    Value: !Ref SchedulerFunction

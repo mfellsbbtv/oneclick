@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowRight, UserPlus, UserMinus, Shield, Zap, Clock } from 'lucide-react'
+import { ArrowRight, UserPlus, UserMinus, Shield, Zap, Clock, Users } from 'lucide-react'
 
 export default function HomePage() {
   return (
@@ -16,7 +16,7 @@ export default function HomePage() {
         </p>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-6">
+      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card className="hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-green-300">
           <Link href="/quick-provision">
             <CardHeader>
@@ -53,6 +53,25 @@ export default function HomePage() {
                 <li>Reset password and sign out</li>
                 <li>Set vacation responder</li>
                 <li>Email manager with details</li>
+              </ul>
+            </CardContent>
+          </Link>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-purple-300">
+          <Link href="/users">
+            <CardHeader>
+              <Users className="h-8 w-8 text-purple-600" />
+              <CardTitle>User Directory</CardTitle>
+              <CardDescription>
+                Browse all managed users and their application account states
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-sm text-gray-600 space-y-1">
+                <li>View all managed users</li>
+                <li>See per-app account status</li>
+                <li>Sync from Google Directory</li>
               </ul>
             </CardContent>
           </Link>

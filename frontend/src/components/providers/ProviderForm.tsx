@@ -181,7 +181,7 @@ export default function ProviderForm({ provider, initialData, onSubmit }: Provid
     const subscription = watch((value) => {
       // Check if all required fields are filled
       const hasRequiredFields = provider.requiredFields.every(field => {
-        const val = value[field.name];
+        const val = (value as Record<string, unknown>)[field.name];
         if (field.type === 'multiselect') {
           return Array.isArray(val) && val.length > 0;
         }
@@ -192,7 +192,7 @@ export default function ProviderForm({ provider, initialData, onSubmit }: Provid
         // Only submit fields that belong to this provider
         const cleanData = Object.keys(value)
           .filter(key => providerFieldNames.includes(key))
-          .reduce((obj, key) => ({ ...obj, [key]: value[key] }), {});
+          .reduce((obj, key) => ({ ...obj, [key]: (value as Record<string, unknown>)[key] }), {});
         
         onSubmit(cleanData);
       }

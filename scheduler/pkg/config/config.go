@@ -8,12 +8,14 @@ import (
 )
 
 type Config struct {
-	Database     DatabaseConfig     `yaml:"database"`
-	Scheduler    SchedulerConfig    `yaml:"scheduler"`
-	Provisioning ProvisioningConfig `yaml:"provisioning"`
-	Termination  TerminationConfig  `yaml:"termination"`
-	Logging      LoggingConfig      `yaml:"logging"`
-	Server       ServerConfig       `yaml:"server"`
+	Database       DatabaseConfig       `yaml:"database"`
+	Scheduler      SchedulerConfig      `yaml:"scheduler"`
+	Provisioning   ProvisioningConfig   `yaml:"provisioning"`
+	Termination    TerminationConfig    `yaml:"termination"`
+	DirectorySync  DirectorySyncConfig  `yaml:"directory_sync"`
+	Webhooks       map[string]string    `yaml:"webhooks"`
+	Logging        LoggingConfig        `yaml:"logging"`
+	Server         ServerConfig         `yaml:"server"`
 }
 
 type DatabaseConfig struct {
@@ -44,6 +46,13 @@ type TerminationConfig struct {
 	Timeout       int    `yaml:"timeout"` // seconds
 	RetryAttempts int    `yaml:"retry_attempts"`
 	RetryDelay    int    `yaml:"retry_delay"` // seconds
+}
+
+type DirectorySyncConfig struct {
+	APIURL   string `yaml:"api_url"`   // e.g. http://localhost:3000/api/directory/sync
+	Interval string `yaml:"interval"`  // cron format, e.g. "0 * * * *" (every hour)
+	APIKey   string `yaml:"api_key"`   // internal key to authenticate sync calls
+	Enabled  bool   `yaml:"enabled"`
 }
 
 type LoggingConfig struct {
@@ -103,6 +112,12 @@ func overrideWithEnv(cfg *Config) {
 	}
 	if apiURL := os.Getenv("TERMINATION_API_URL"); apiURL != "" {
 		cfg.Termination.APIURL = apiURL
+	}
+	if apiURL := os.Getenv("DIRECTORY_SYNC_API_URL"); apiURL != "" {
+		cfg.DirectorySync.APIURL = apiURL
+	}
+	if key := os.Getenv("DIRECTORY_SYNC_API_KEY"); key != "" {
+		cfg.DirectorySync.APIKey = key
 	}
 	if interval := os.Getenv("SCHEDULER_INTERVAL"); interval != "" {
 		cfg.Scheduler.CheckInterval = interval

@@ -1,0 +1,33 @@
+# Binaries
+aws-user-removal
+aws-user-removal.exe
+aws-user-removal-*
+
+# Build directories
+build/
+dist/
+release/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Go
+*.o
+*.a
+*.so
+.go/
+vendor/
+
+# Test coverage
+*.out
+coverage.txt
+
+# Temporary files
+*.tmp
+*.log
+

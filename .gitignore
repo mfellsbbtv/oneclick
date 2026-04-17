@@ -99,6 +99,9 @@ config/
 # MCP server config (contains bearer tokens)
 .mcp.json
 
+# Claude Code session data and memory
+.claude/
+
 # Test scripts with credentials
 test-*.js
 check-user.sh

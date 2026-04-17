@@ -24,6 +24,22 @@ termination:
   retry_attempts: 3
   retry_delay: 60
 
+directory_sync:
+  api_url: "http://localhost:3000/api/directory/sync"
+  interval: "0 * * * *"   # every hour
+  api_key: ""              # set via DIRECTORY_SYNC_API_KEY env var
+  enabled: true
+
+# Additional lifecycle operation webhooks (used for job types beyond provision/terminate)
+webhooks:
+  suspend: "http://localhost:3000/api/suspend-n8n"
+  reactivate: "http://localhost:3000/api/reactivate-n8n"
+  modify_groups: "http://localhost:3000/api/modify-groups-n8n"
+  modify_license: "http://localhost:3000/api/modify-license-n8n"
+  modify_role: "http://localhost:3000/api/modify-role-n8n"
+  password_reset: "http://localhost:3000/api/password-reset-n8n"
+  transfer_ownership: "http://localhost:3000/api/transfer-ownership-n8n"
+
 logging:
   level: info
   format: text  # text or json

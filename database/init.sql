@@ -205,6 +205,146 @@ FROM provisioning_requests pr
 JOIN users u ON pr.user_id = u.id
 LEFT JOIN admin_users au ON pr.created_by = au.id;
 
+-- ============================================================
+-- Managed users (local mirror of Google Workspace directory)
+-- ============================================================
+
+CREATE TABLE managed_users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email VARCHAR(255) NOT NULL UNIQUE,
+  full_name VARCHAR(255) NOT NULL,
+  given_name VARCHAR(128),
+  family_name VARCHAR(128),
+  department VARCHAR(255),
+  job_title VARCHAR(255),
+  manager_email VARCHAR(255),
+  org_unit_path VARCHAR(512),
+  is_admin BOOLEAN DEFAULT false,
+  is_delegated_admin BOOLEAN DEFAULT false,
+  is_suspended BOOLEAN DEFAULT false,
+  google_id VARCHAR(255) UNIQUE,
+  status VARCHAR(50) NOT NULL DEFAULT 'active',
+  metadata JSONB DEFAULT '{}'::jsonb,
+  last_synced_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT managed_users_valid_status CHECK (status IN ('active', 'suspended', 'terminated', 'archived'))
+);
+
+CREATE INDEX idx_managed_users_email ON managed_users(email);
+CREATE INDEX idx_managed_users_status ON managed_users(status);
+CREATE INDEX idx_managed_users_department ON managed_users(department);
+CREATE INDEX idx_managed_users_manager ON managed_users(manager_email);
+CREATE INDEX idx_managed_users_google_id ON managed_users(google_id);
+
+CREATE TRIGGER update_managed_users_updated_at BEFORE UPDATE ON managed_users
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Per-user, per-app account state
+CREATE TABLE user_app_accounts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  managed_user_id UUID NOT NULL REFERENCES managed_users(id) ON DELETE CASCADE,
+  app_provider VARCHAR(50) NOT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'not_provisioned',
+  external_user_id VARCHAR(255),
+  external_email VARCHAR(255),
+  license_info JSONB DEFAULT '[]'::jsonb,
+  groups_info JSONB DEFAULT '[]'::jsonb,
+  role_info JSONB DEFAULT '{}'::jsonb,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  provisioned_at TIMESTAMP WITH TIME ZONE,
+  last_modified_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(managed_user_id, app_provider),
+  CONSTRAINT user_app_accounts_valid_status CHECK (status IN ('active', 'suspended', 'deactivated', 'not_provisioned', 'pending', 'error')),
+  CONSTRAINT user_app_accounts_valid_provider CHECK (app_provider IN ('google-workspace', 'microsoft-365', 'jira', 'zoom', 'github', 'hubspot', 'confluence', 'slack'))
+);
+
+CREATE INDEX idx_user_app_accounts_user ON user_app_accounts(managed_user_id);
+CREATE INDEX idx_user_app_accounts_provider ON user_app_accounts(app_provider);
+CREATE INDEX idx_user_app_accounts_status ON user_app_accounts(status);
+
+CREATE TRIGGER update_user_app_accounts_updated_at BEFORE UPDATE ON user_app_accounts
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Tracks each directory sync run
+CREATE TABLE directory_sync_runs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  status VARCHAR(20) NOT NULL DEFAULT 'running',
+  users_synced INTEGER DEFAULT 0,
+  users_added INTEGER DEFAULT 0,
+  users_updated INTEGER DEFAULT 0,
+  users_removed INTEGER DEFAULT 0,
+  errors JSONB DEFAULT '[]'::jsonb,
+  started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  completed_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX idx_sync_runs_started ON directory_sync_runs(started_at DESC);
+
+-- ============================================================
+-- Change request and approval tables
+-- ============================================================
+
+-- All lifecycle change requests (provision, terminate, group changes, etc.)
+CREATE TABLE change_requests (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  request_type VARCHAR(30) NOT NULL,
+    -- 'provision', 'terminate', 'group_change', 'license_change',
+    -- 'password_reset', 'role_change', 'suspend', 'reactivate'
+  target_user_email VARCHAR(255) NOT NULL,
+  target_user_name VARCHAR(255),
+  payload JSONB NOT NULL,
+  schedule_time TIMESTAMP WITH TIME ZONE,  -- NULL = execute immediately after approval
+  status VARCHAR(20) NOT NULL DEFAULT 'pending_approval',
+    -- 'pending_approval', 'approved', 'rejected', 'scheduled',
+    -- 'executing', 'completed', 'failed', 'cancelled'
+  requested_by VARCHAR(255) NOT NULL,
+  requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  approved_by VARCHAR(255),
+  approved_at TIMESTAMP WITH TIME ZONE,
+  executed_at TIMESTAMP WITH TIME ZONE,
+  error_message TEXT,
+  retry_count INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT valid_request_type CHECK (request_type IN (
+    'provision', 'terminate', 'group_change', 'license_change',
+    'password_reset', 'role_change', 'suspend', 'reactivate'
+  )),
+  CONSTRAINT valid_cr_status CHECK (status IN (
+    'pending_approval', 'approved', 'rejected', 'scheduled',
+    'executing', 'completed', 'failed', 'cancelled'
+  ))
+);
+
+CREATE INDEX idx_cr_status ON change_requests(status);
+CREATE INDEX idx_cr_type ON change_requests(request_type);
+CREATE INDEX idx_cr_target ON change_requests(target_user_email);
+CREATE INDEX idx_cr_requested_by ON change_requests(requested_by);
+CREATE INDEX idx_cr_pending_approval ON change_requests(created_at DESC)
+  WHERE status = 'pending_approval';
+CREATE INDEX idx_cr_schedule ON change_requests(schedule_time)
+  WHERE status = 'approved';
+
+CREATE TRIGGER update_change_requests_updated_at BEFORE UPDATE ON change_requests
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Audit trail for approve/reject actions
+CREATE TABLE approval_actions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  change_request_id UUID NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+  action VARCHAR(10) NOT NULL,  -- 'approve', 'reject'
+  actor_email VARCHAR(255) NOT NULL,
+  reason TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT valid_action CHECK (action IN ('approve', 'reject'))
+);
+
+CREATE INDEX idx_approval_actions_request ON approval_actions(change_request_id);
+CREATE INDEX idx_approval_actions_actor ON approval_actions(actor_email);
+
 -- Grant permissions (adjust as needed for your setup)
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO oneclick;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO oneclick;

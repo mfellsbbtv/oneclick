@@ -146,9 +146,7 @@ function WizardContent() {
                             {app === AppProvider.GOOGLE_WORKSPACE && (
                               <GoogleWorkspaceSummary formData={config} />
                             )}
-                            {app === AppProvider.SLACK && (
-                              <SlackSummary formData={config} />
-                            )}
+                            {/* Slack provisioning removed */}
                           </div>
                         )}
                       </div>
@@ -178,7 +176,7 @@ function WizardContent() {
         <CardHeader>
           <CardTitle>Account Provisioning Wizard</CardTitle>
           <CardDescription>
-            Set up new user accounts across your organization's applications
+            Set up new user accounts across your organization&apos;s applications
           </CardDescription>
         </CardHeader>
         

@@ -13,6 +13,7 @@ import { MicrosoftGroupsSelector } from '@/components/MicrosoftGroupsSelector';
 import { CheckCircle2, Circle, AlertCircle, Loader2, Users, Mail, Building, Briefcase, AlertTriangle, RefreshCw, Clock } from 'lucide-react';
 import { SchedulePicker } from '@/components/SchedulePicker';
 import { ScheduleConfig } from '@/lib/scheduler-types';
+import type { ChangeRequest } from '@/lib/change-request-types';
 
 interface QuickProvisionFormProps {
   onSubmit?: (data: ProvisionData) => void;
@@ -64,6 +65,7 @@ interface ProvisionData {
 
 export function QuickProvisionForm({ onSubmit }: QuickProvisionFormProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [submittedRequest, setSubmittedRequest] = useState<ChangeRequest | null>(null);
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>({
     isScheduled: false,
     scheduleTime: null,
@@ -216,81 +218,116 @@ export function QuickProvisionForm({ onSubmit }: QuickProvisionFormProps) {
     e.preventDefault();
     setIsLoading(true);
 
-    const formPayload = {
-      ...provisionData,
-      applications: {
-        ...provisionData.applications,
-        // Only include enabled applications
-        ...(provisionData.applications.google && {
-          'google-workspace': provisionData.applications.googleConfig,
-        }),
-        ...(provisionData.applications.microsoft && {
-          'microsoft-365': provisionData.applications.microsoftConfig,
-        }),
-        // Note: jira and jiraConfig are already in provisionData.applications
-        // The payload builder handles them correctly
-      },
+    const payload = {
+      employee: provisionData.employee,
+      applications: provisionData.applications,
     };
 
     try {
-      if (scheduleConfig.isScheduled && scheduleConfig.scheduleTime) {
-        // Schedule for later
-        const response = await fetch('/api/scheduler/schedule', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            job_type: 'provision',
-            payload: formPayload,
-            schedule_time: scheduleConfig.scheduleTime,
-            tags: ['scheduled', 'provision'],
-          }),
-        });
+      const response = await fetch('/api/change-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          request_type: 'provision',
+          target_user_email: provisionData.employee.email,
+          target_user_name: `${provisionData.employee.firstName} ${provisionData.employee.lastName}`,
+          payload,
+          schedule_time: scheduleConfig.isScheduled && scheduleConfig.scheduleTime
+            ? scheduleConfig.scheduleTime
+            : null,
+        }),
+      });
 
-        if (!response.ok) {
-          throw new Error('Scheduling failed');
-        }
+      const data = await response.json();
 
-        window.location.href = '/schedules';
-      } else {
-        // Immediate execution — existing flow unchanged
-        const response = await fetch('/api/provision-n8n', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(formPayload),
-        });
-
-        if (!response.ok) {
-          throw new Error('Provisioning failed');
-        }
-
-        const result = await response.json();
-
-        // Save provisioning data and results to localStorage for success page
-        const provisioningData = {
-          request: provisionData,
-          response: result,
-          timestamp: new Date().toISOString(),
-        };
-        localStorage.setItem('lastProvisioning', JSON.stringify(provisioningData));
-
-        if (onSubmit) {
-          onSubmit(provisionData);
-        }
-
-        // Redirect to success page
-        window.location.href = '/provision/success';
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to submit request');
       }
+
+      if (onSubmit) {
+        onSubmit(provisionData);
+      }
+
+      setSubmittedRequest(data as ChangeRequest);
     } catch (error) {
-      console.error('Provisioning error:', error);
-      alert('Provisioning failed. Please try again.');
+      console.error('Provision request error:', error);
+      alert(error instanceof Error ? error.message : 'Failed to submit request. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
+
+  if (submittedRequest) {
+    return (
+      <Card className="max-w-2xl mx-auto">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CheckCircle2 className="h-6 w-6 text-green-500" />
+            Request Submitted for Approval
+          </CardTitle>
+          <CardDescription>
+            Your provisioning request has been submitted and is awaiting admin approval.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-gray-50 p-4 rounded-lg space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-600">Request ID:</span>
+              <span className="font-mono text-xs text-gray-500">{submittedRequest.id}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">User:</span>
+              <span className="font-medium">{submittedRequest.target_user_name}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Email:</span>
+              <span className="font-medium">{submittedRequest.target_user_email}</span>
+            </div>
+            {submittedRequest.schedule_time && (
+              <div className="flex justify-between">
+                <span className="text-gray-600">Scheduled for:</span>
+                <span className="font-medium">{new Date(submittedRequest.schedule_time).toLocaleString()}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-gray-600">Status:</span>
+              <span className="inline-flex items-center gap-1 text-yellow-700 font-medium">
+                <Clock className="h-3 w-3" />
+                Pending Approval
+              </span>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                setSubmittedRequest(null);
+                setProvisionData({
+                  employee: { firstName: '', lastName: '', email: '', personalEmail: '', department: '', jobTitle: '', role: 'general' },
+                  applications: { google: true, microsoft: true, jira: false, zoom: false, github: false, hubspot: false,
+                    googleConfig: { primaryOrgUnit: '/', licenseSku: '1010020026', groups: [], passwordMode: 'auto' },
+                    microsoftConfig: { usageLocation: 'US', licenses: ['f245ecc8-75af-4f8e-b61f-27d8114de5f3'], groups: [], requirePasswordChange: true },
+                    jiraConfig: { products: ['jira-software', 'confluence'], groups: ['jira-users', 'confluence-users'] },
+                    githubConfig: { role: 'member', teams: [] },
+                    hubspotConfig: { seatType: 'core' },
+                  },
+                });
+              }}
+            >
+              Provision Another User
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => { window.location.href = '/requests'; }}
+            >
+              View My Requests
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -982,16 +1019,16 @@ export function QuickProvisionForm({ onSubmit }: QuickProvisionFormProps) {
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {scheduleConfig.isScheduled ? 'Scheduling...' : 'Provisioning...'}
+              Submitting...
             </>
           ) : scheduleConfig.isScheduled ? (
             <>
               <Clock className="mr-2 h-4 w-4" />
-              Schedule Provisioning
+              Submit Scheduled Request
             </>
           ) : (
             <>
-              🚀 Provision User
+              🚀 Submit for Approval
             </>
           )}
         </Button>

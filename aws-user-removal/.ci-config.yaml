@@ -1,0 +1,45 @@
+# CI/CD Configuration for AWS User Removal Tool
+# This file enables automated testing, building, and releasing
+
+tool:
+  name: aws-user-removal
+  language: go
+  version: 1.0.0
+  enabled: true
+
+ci:
+  # Install dependencies
+  install_command: "go mod download && go mod verify"
+  
+  # Lint and format check
+  lint_command: "go fmt ./... && go vet ./..."
+  
+  # Run tests
+  test_command: "go test -v -race ./..."
+  
+  # Build for all platforms
+  build_command: "make build-all"
+  
+  # Working directory (relative to this file)
+  working_directory: .
+
+release:
+  # Enable GitHub releases
+  enable_github_release: true
+  
+  # Generate changelog from commits
+  include_changelog: true
+  
+  # Artifacts to upload to release
+  artifacts:
+    - path: "aws-user-removal-linux-amd64"
+      name: "aws-user-removal-linux-amd64"
+    - path: "aws-user-removal-linux-arm64"
+      name: "aws-user-removal-linux-arm64"
+    - path: "aws-user-removal-darwin-amd64"
+      name: "aws-user-removal-darwin-amd64"
+    - path: "aws-user-removal-darwin-arm64"
+      name: "aws-user-removal-darwin-arm64"
+    - path: "aws-user-removal-windows-amd64.exe"
+      name: "aws-user-removal-windows-amd64.exe"
+

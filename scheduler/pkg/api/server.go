@@ -75,13 +75,16 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
 }
 
-// createSchedule creates a new scheduled job (provision or terminate)
+// createSchedule creates a new scheduled job
 func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		JobType      string          `json:"job_type"`
-		Payload      json.RawMessage `json:"payload"`
-		ScheduleTime time.Time       `json:"schedule_time"`
-		Tags         []string        `json:"tags"`
+		JobType         string          `json:"job_type"`
+		Payload         json.RawMessage `json:"payload"`
+		ScheduleTime    time.Time       `json:"schedule_time"`
+		Tags            []string        `json:"tags"`
+		TargetUserEmail *string         `json:"target_user_email,omitempty"`
+		RequestedBy     *string         `json:"requested_by,omitempty"`
+		ApprovalStatus  string          `json:"approval_status,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -90,8 +93,8 @@ func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate job type
-	if req.JobType != database.JobTypeProvision && req.JobType != database.JobTypeTerminate {
-		respondError(w, http.StatusBadRequest, "job_type must be 'provision' or 'terminate'")
+	if !database.ValidJobTypes[req.JobType] {
+		respondError(w, http.StatusBadRequest, "Invalid job_type")
 		return
 	}
 
@@ -112,11 +115,19 @@ func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	approvalStatus := req.ApprovalStatus
+	if approvalStatus == "" {
+		approvalStatus = database.ApprovalAutoApproved
+	}
+
 	job := &database.ScheduledJob{
-		JobType:      req.JobType,
-		Payload:      database.JSONB(req.Payload),
-		ScheduleTime: req.ScheduleTime,
-		Tags:         req.Tags,
+		JobType:         req.JobType,
+		Payload:         database.JSONB(req.Payload),
+		ScheduleTime:    req.ScheduleTime,
+		Tags:            req.Tags,
+		TargetUserEmail: req.TargetUserEmail,
+		RequestedBy:     req.RequestedBy,
+		ApprovalStatus:  approvalStatus,
 	}
 
 	if err := s.db.CreateScheduledJob(job); err != nil {

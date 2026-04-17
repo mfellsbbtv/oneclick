@@ -12,8 +12,36 @@ import (
 
 // Job type constants
 const (
-	JobTypeProvision  = "provision"
-	JobTypeTerminate  = "terminate"
+	JobTypeProvision         = "provision"
+	JobTypeTerminate         = "terminate"
+	JobTypeSuspend           = "suspend"
+	JobTypeReactivate        = "reactivate"
+	JobTypeModifyGroups      = "modify_groups"
+	JobTypeModifyLicense     = "modify_license"
+	JobTypeModifyRole        = "modify_role"
+	JobTypePasswordReset     = "password_reset"
+	JobTypeTransferOwnership = "transfer_ownership"
+)
+
+// ValidJobTypes is the set of all recognized job types.
+var ValidJobTypes = map[string]bool{
+	JobTypeProvision:         true,
+	JobTypeTerminate:         true,
+	JobTypeSuspend:           true,
+	JobTypeReactivate:        true,
+	JobTypeModifyGroups:      true,
+	JobTypeModifyLicense:     true,
+	JobTypeModifyRole:        true,
+	JobTypePasswordReset:     true,
+	JobTypeTransferOwnership: true,
+}
+
+// Approval status constants
+const (
+	ApprovalPending      = "pending_approval"
+	ApprovalApproved     = "approved"
+	ApprovalRejected     = "rejected"
+	ApprovalAutoApproved = "auto_approved"
 )
 
 // JSONB is a wrapper around json.RawMessage that implements
@@ -61,19 +89,23 @@ func (j *JSONB) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ScheduledJob is the generic job record used for both provision and terminate jobs.
+// ScheduledJob is the generic job record for all lifecycle operations.
 type ScheduledJob struct {
-	ID           uuid.UUID      `json:"id"`
-	JobType      string         `json:"job_type"`
-	Payload      JSONB          `json:"payload"`
-	ScheduleTime time.Time      `json:"schedule_time"`
-	Status       string         `json:"status"`
-	Tags         pq.StringArray `json:"tags"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	ExecutedAt   *time.Time     `json:"executed_at,omitempty"`
-	ErrorMessage *string        `json:"error_message,omitempty"`
-	RetryCount   int            `json:"retry_count"`
+	ID              uuid.UUID      `json:"id"`
+	JobType         string         `json:"job_type"`
+	Payload         JSONB          `json:"payload"`
+	ScheduleTime    time.Time      `json:"schedule_time"`
+	Status          string         `json:"status"`
+	Tags            pq.StringArray `json:"tags"`
+	TargetUserEmail *string        `json:"target_user_email,omitempty"`
+	RequestedBy     *string        `json:"requested_by,omitempty"`
+	ApprovedBy      *string        `json:"approved_by,omitempty"`
+	ApprovalStatus  string         `json:"approval_status"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	ExecutedAt      *time.Time     `json:"executed_at,omitempty"`
+	ErrorMessage    *string        `json:"error_message,omitempty"`
+	RetryCount      int            `json:"retry_count"`
 }
 
 // ScheduledProvision represents a scheduled user provisioning job
@@ -152,4 +184,83 @@ const (
 	TagNewHire     = "new-hire"
 	TagContractor  = "contractor"
 	TagIntern      = "intern"
+)
+
+// ManagedUser is the local mirror of a Google Workspace user, populated by directory sync.
+type ManagedUser struct {
+	ID               uuid.UUID  `json:"id"`
+	Email            string     `json:"email"`
+	FullName         string     `json:"full_name"`
+	GivenName        *string    `json:"given_name,omitempty"`
+	FamilyName       *string    `json:"family_name,omitempty"`
+	Department       *string    `json:"department,omitempty"`
+	JobTitle         *string    `json:"job_title,omitempty"`
+	ManagerEmail     *string    `json:"manager_email,omitempty"`
+	OrgUnitPath      *string    `json:"org_unit_path,omitempty"`
+	IsAdmin          bool       `json:"is_admin"`
+	IsDelegatedAdmin bool       `json:"is_delegated_admin"`
+	IsSuspended      bool       `json:"is_suspended"`
+	GoogleID         *string    `json:"google_id,omitempty"`
+	Status           string     `json:"status"`
+	Metadata         JSONB      `json:"metadata"`
+	LastSyncedAt     *time.Time `json:"last_synced_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+// DirectorySyncRun tracks a single execution of the directory sync.
+type DirectorySyncRun struct {
+	ID           uuid.UUID  `json:"id"`
+	Status       string     `json:"status"` // running, completed, failed
+	UsersSynced  int        `json:"users_synced"`
+	UsersAdded   int        `json:"users_added"`
+	UsersUpdated int        `json:"users_updated"`
+	UsersRemoved int        `json:"users_removed"`
+	Errors       JSONB      `json:"errors"`
+	StartedAt    time.Time  `json:"started_at"`
+	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+}
+
+// ChangeRequest represents any lifecycle change that requires admin approval.
+type ChangeRequest struct {
+	ID              uuid.UUID  `json:"id"`
+	RequestType     string     `json:"request_type"`
+	TargetUserEmail string     `json:"target_user_email"`
+	TargetUserName  *string    `json:"target_user_name,omitempty"`
+	Payload         JSONB      `json:"payload"`
+	ScheduleTime    *time.Time `json:"schedule_time,omitempty"`
+	Status          string     `json:"status"`
+	RequestedBy     string     `json:"requested_by"`
+	RequestedAt     time.Time  `json:"requested_at"`
+	ApprovedBy      *string    `json:"approved_by,omitempty"`
+	ApprovedAt      *time.Time `json:"approved_at,omitempty"`
+	ExecutedAt      *time.Time `json:"executed_at,omitempty"`
+	ErrorMessage    *string    `json:"error_message,omitempty"`
+	RetryCount      int        `json:"retry_count"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// ChangeRequest status constants
+const (
+	CRStatusPendingApproval = "pending_approval"
+	CRStatusApproved        = "approved"
+	CRStatusRejected        = "rejected"
+	CRStatusScheduled       = "scheduled"
+	CRStatusExecuting       = "executing"
+	CRStatusCompleted       = "completed"
+	CRStatusFailed          = "failed"
+	CRStatusCancelled       = "cancelled"
+)
+
+// ChangeRequest type constants
+const (
+	CRTypeProvision     = "provision"
+	CRTypeTerminate     = "terminate"
+	CRTypeGroupChange   = "group_change"
+	CRTypeLicenseChange = "license_change"
+	CRTypePasswordReset = "password_reset"
+	CRTypeRoleChange    = "role_change"
+	CRTypeSuspend       = "suspend"
+	CRTypeReactivate    = "reactivate"
 )

@@ -38,12 +38,53 @@ func New(db *database.DB, cfg *config.Config) *Scheduler {
 func (s *Scheduler) Start() error {
 	_, err := s.cron.AddFunc(s.cfg.Scheduler.CheckInterval, s.checkAndExecute)
 	if err != nil {
-		return fmt.Errorf("failed to add cron job: %w", err)
+		return fmt.Errorf("failed to add job executor cron: %w", err)
+	}
+
+	if s.cfg.DirectorySync.Enabled && s.cfg.DirectorySync.APIURL != "" {
+		interval := s.cfg.DirectorySync.Interval
+		if interval == "" {
+			interval = "0 * * * *" // default: hourly
+		}
+		_, err = s.cron.AddFunc(interval, s.runDirectorySync)
+		if err != nil {
+			return fmt.Errorf("failed to add directory sync cron: %w", err)
+		}
+		log.Infof("Directory sync scheduled: %s", interval)
 	}
 
 	s.cron.Start()
 	log.Info("Scheduler started successfully")
 	return nil
+}
+
+// runDirectorySync calls the frontend API to trigger a directory sync.
+func (s *Scheduler) runDirectorySync() {
+	logger := log.WithField("job", "directory_sync")
+	logger.Info("Triggering directory sync")
+
+	req, err := http.NewRequest(http.MethodPost, s.cfg.DirectorySync.APIURL, nil)
+	if err != nil {
+		logger.Errorf("Failed to build sync request: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if s.cfg.DirectorySync.APIKey != "" {
+		req.Header.Set("x-internal-api-key", s.cfg.DirectorySync.APIKey)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		logger.Errorf("Directory sync request failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		logger.Errorf("Directory sync returned status %d", resp.StatusCode)
+		return
+	}
+	logger.Info("Directory sync completed successfully")
 }
 
 // Stop stops the scheduler
@@ -90,12 +131,17 @@ func (s *Scheduler) executeJob(job database.ScheduledJob) {
 	case database.JobTypeTerminate:
 		targetURL = s.cfg.Termination.APIURL
 	default:
-		errMsg := fmt.Sprintf("unknown job type: %s", job.JobType)
-		logger.Error(errMsg)
-		if err := s.db.UpdateJobStatus(job.ID, database.StatusFailed, &errMsg); err != nil {
-			logger.Errorf("Failed to update job status to failed: %v", err)
+		// Check the webhooks map for additional job types
+		if url, ok := s.cfg.Webhooks[job.JobType]; ok && url != "" {
+			targetURL = url
+		} else {
+			errMsg := fmt.Sprintf("no webhook URL configured for job type: %s", job.JobType)
+			logger.Error(errMsg)
+			if err := s.db.UpdateJobStatus(job.ID, database.StatusFailed, &errMsg); err != nil {
+				logger.Errorf("Failed to update job status to failed: %v", err)
+			}
+			return
 		}
-		return
 	}
 
 	// Update status to executing

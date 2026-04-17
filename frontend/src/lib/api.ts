@@ -17,7 +17,7 @@ class ApiClient {
     // Add authorization header if user is logged in
     const session = await getSession()
     if (session?.user) {
-      headers.append('Authorization', `Bearer ${session.accessToken}`)
+      headers.append('Authorization', `Bearer ${(session as any).accessToken}`)
     }
 
     return headers

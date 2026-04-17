@@ -9,6 +9,9 @@ import { Switch } from '@/components/ui/switch';
 import { AlertCircle, CheckCircle2, Circle, Loader2, UserMinus, Calendar, Mail, Shield, Clock } from 'lucide-react';
 import { SchedulePicker } from '@/components/SchedulePicker';
 import { ScheduleConfig } from '@/lib/scheduler-types';
+import { UserSelector, TerminableUser } from '@/components/UserSelector';
+import { useSession } from 'next-auth/react';
+import type { ChangeRequest } from '@/lib/change-request-types';
 
 // Available domains for the organization
 const AVAILABLE_DOMAINS = [
@@ -21,8 +24,7 @@ const AVAILABLE_DOMAINS = [
 ];
 
 interface TerminationData {
-  userUsername: string;
-  userDomain: string;
+  selectedUser: TerminableUser | null;
   managerUsername: string;
   managerDomain: string;
   terminationDate: string;
@@ -73,8 +75,10 @@ interface TerminationResult {
 }
 
 export function TerminationForm() {
+  const { data: session } = useSession();
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<TerminationResult | null>(null);
+  const [submittedRequest, setSubmittedRequest] = useState<ChangeRequest | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmText, setConfirmText] = useState('');
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>({
@@ -83,8 +87,7 @@ export function TerminationForm() {
   });
 
   const [terminationData, setTerminationData] = useState<TerminationData>({
-    userUsername: '',
-    userDomain: '@rhei.com',
+    selectedUser: null,
     managerUsername: '',
     managerDomain: '@rhei.com',
     terminationDate: new Date().toISOString().split('T')[0],
@@ -101,11 +104,11 @@ export function TerminationForm() {
   });
 
   // Computed email addresses
-  const userEmail = terminationData.userUsername ? `${terminationData.userUsername}${terminationData.userDomain}` : '';
+  const userEmail = terminationData.selectedUser?.email || '';
   const managerEmail = terminationData.managerUsername ? `${terminationData.managerUsername}${terminationData.managerDomain}` : '';
 
   const isFormValid =
-    terminationData.userUsername &&
+    terminationData.selectedUser &&
     terminationData.managerUsername &&
     confirmText.toLowerCase() === 'terminate';
 
@@ -131,46 +134,29 @@ export function TerminationForm() {
     };
 
     try {
-      if (scheduleConfig.isScheduled && scheduleConfig.scheduleTime) {
-        // Schedule for later
-        const response = await fetch('/api/scheduler/schedule', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            job_type: 'terminate',
-            payload: terminationPayload,
-            schedule_time: scheduleConfig.scheduleTime,
-            tags: ['scheduled', 'termination'],
-          }),
-        });
+      const response = await fetch('/api/change-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          request_type: 'terminate',
+          target_user_email: userEmail,
+          target_user_name: terminationData.selectedUser?.name || userEmail,
+          payload: terminationPayload,
+          schedule_time: scheduleConfig.isScheduled && scheduleConfig.scheduleTime
+            ? scheduleConfig.scheduleTime
+            : null,
+        }),
+      });
 
-        if (!response.ok) {
-          throw new Error('Scheduling failed');
-        }
+      const data = await response.json();
 
-        window.location.href = '/schedules';
-      } else {
-        // Immediate execution — existing flow unchanged
-        const response = await fetch('/api/terminate-n8n', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(terminationPayload),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || 'Termination failed');
-        }
-
-        setResult(data);
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to submit termination request');
       }
+
+      setSubmittedRequest(data as ChangeRequest);
     } catch (err) {
-      console.error('Termination error:', err);
+      console.error('Termination request error:', err);
       setError(err instanceof Error ? err.message : 'Unknown error occurred');
     } finally {
       setIsLoading(false);
@@ -179,8 +165,7 @@ export function TerminationForm() {
 
   const resetForm = () => {
     setTerminationData({
-      userUsername: '',
-      userDomain: '@rhei.com',
+      selectedUser: null,
       managerUsername: '',
       managerDomain: '@rhei.com',
       terminationDate: new Date().toISOString().split('T')[0],
@@ -199,6 +184,55 @@ export function TerminationForm() {
     setResult(null);
     setError(null);
   };
+
+  if (submittedRequest) {
+    return (
+      <Card className="max-w-2xl mx-auto">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CheckCircle2 className="h-6 w-6 text-green-500" />
+            Termination Request Submitted
+          </CardTitle>
+          <CardDescription>
+            Your request is awaiting admin approval before execution.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-gray-50 p-4 rounded-lg space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-600">Request ID:</span>
+              <span className="font-mono text-xs text-gray-500">{submittedRequest.id}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">User to terminate:</span>
+              <span className="font-medium">{submittedRequest.target_user_email}</span>
+            </div>
+            {submittedRequest.schedule_time && (
+              <div className="flex justify-between">
+                <span className="text-gray-600">Scheduled for:</span>
+                <span className="font-medium">{new Date(submittedRequest.schedule_time).toLocaleString()}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-gray-600">Status:</span>
+              <span className="inline-flex items-center gap-1 text-yellow-700 font-medium">
+                <Clock className="h-3 w-3" />
+                Pending Approval
+              </span>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1" onClick={resetForm}>
+              Submit Another Request
+            </Button>
+            <Button className="flex-1" onClick={() => { window.location.href = '/requests'; }}>
+              View My Requests
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (result) {
     return (
@@ -321,47 +355,20 @@ export function TerminationForm() {
             <UserMinus className="h-5 w-5" />
             User to Terminate
           </CardTitle>
-          <CardDescription>Enter the details of the user being terminated</CardDescription>
+          <CardDescription>
+            {session?.user?.role === 'superadmin' ? 'Super Admin — select any user to terminate' :
+             session?.user?.role === 'admin' ? 'Admin — select any non-admin user to terminate' :
+             'Select a user from your managed groups to terminate'}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="userUsername" className="flex items-center gap-2">
-              <Mail className="h-4 w-4" />
-              User Email *
-            </Label>
-            <div className="flex mt-1">
-              <Input
-                id="userUsername"
-                type="text"
-                required
-                value={terminationData.userUsername}
-                onChange={(e) => setTerminationData(prev => ({
-                  ...prev,
-                  userUsername: e.target.value.toLowerCase().trim()
-                }))}
-                placeholder="username"
-                className="rounded-r-none"
-              />
-              <select
-                value={terminationData.userDomain}
-                onChange={(e) => setTerminationData(prev => ({
-                  ...prev,
-                  userDomain: e.target.value
-                }))}
-                className="px-3 border border-l-0 rounded-r-md bg-gray-50 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              >
-                {AVAILABLE_DOMAINS.map(domain => (
-                  <option key={domain.value} value={domain.value}>
-                    {domain.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {userEmail && (
-              <p className="text-xs text-blue-600 mt-1">Will terminate: {userEmail}</p>
-            )}
-            <p className="text-xs text-gray-500 mt-1">The email address of the user being terminated</p>
-          </div>
+          <UserSelector
+            selectedUser={terminationData.selectedUser}
+            onSelect={(user) => setTerminationData(prev => ({
+              ...prev,
+              selectedUser: user,
+            }))}
+          />
 
           <div>
             <Label htmlFor="managerUsername" className="flex items-center gap-2">
@@ -595,13 +602,13 @@ export function TerminationForm() {
       <Card className="border-red-200">
         <CardHeader>
           <CardTitle className="text-red-700">Confirm Termination</CardTitle>
-          <CardDescription>Type "terminate" to confirm this action</CardDescription>
+          <CardDescription>Type &quot;terminate&quot; to confirm this action</CardDescription>
         </CardHeader>
         <CardContent>
           <Input
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
-            placeholder='Type "terminate" to confirm'
+            placeholder="Type &quot;terminate&quot; to confirm"
             className="border-red-200 focus:ring-red-500"
           />
         </CardContent>
@@ -627,17 +634,17 @@ export function TerminationForm() {
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {scheduleConfig.isScheduled ? 'Scheduling...' : 'Terminating...'}
+              Submitting...
             </>
           ) : scheduleConfig.isScheduled ? (
             <>
               <Clock className="mr-2 h-4 w-4" />
-              Schedule Termination
+              Submit Scheduled Request
             </>
           ) : (
             <>
               <UserMinus className="mr-2 h-4 w-4" />
-              Terminate Now
+              Submit for Approval
             </>
           )}
         </Button>
